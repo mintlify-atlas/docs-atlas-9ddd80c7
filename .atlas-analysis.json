@@ -1,0 +1,278 @@
+{
+  "projectType": "framework",
+  "projectName": "FastAPI",
+  "projectDescription": "Modern, fast web framework for building APIs with Python based on standard type hints",
+  "theme": "palm",
+  "primaryColor": "#009688",
+  "lightColor": "#4DB6AC",
+  "darkColor": "#00695C",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart",
+              "tutorial/first-steps"
+            ]
+          },
+          {
+            "group": "Tutorial",
+            "pages": [
+              "tutorial/path-parameters",
+              "tutorial/query-parameters",
+              "tutorial/request-body",
+              "tutorial/request-forms",
+              "tutorial/request-files",
+              "tutorial/response-model",
+              "tutorial/extra-models",
+              "tutorial/response-status-code",
+              "tutorial/extra-data-types",
+              "tutorial/cookie-params",
+              "tutorial/header-params"
+            ]
+          },
+          {
+            "group": "Dependencies",
+            "pages": [
+              "tutorial/dependencies/dependencies-intro",
+              "tutorial/dependencies/classes-as-dependencies",
+              "tutorial/dependencies/sub-dependencies",
+              "tutorial/dependencies/dependencies-in-path",
+              "tutorial/dependencies/global-dependencies"
+            ]
+          },
+          {
+            "group": "Security",
+            "pages": [
+              "tutorial/security/security-intro",
+              "tutorial/security/first-steps",
+              "tutorial/security/get-current-user",
+              "tutorial/security/oauth2-jwt",
+              "tutorial/security/oauth2-scopes"
+            ]
+          },
+          {
+            "group": "Application Structure",
+            "pages": [
+              "tutorial/bigger-applications",
+              "tutorial/background-tasks",
+              "tutorial/metadata",
+              "tutorial/static-files",
+              "tutorial/testing"
+            ]
+          },
+          {
+            "group": "Database",
+            "pages": [
+              "tutorial/sql-databases",
+              "tutorial/async-sql-databases"
+            ]
+          },
+          {
+            "group": "Deployment",
+            "pages": [
+              "deployment/index",
+              "deployment/docker",
+              "deployment/server-workers",
+              "deployment/https",
+              "deployment/cloud"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Advanced",
+        "groups": [
+          {
+            "group": "Advanced Features",
+            "pages": [
+              "advanced/path-operation-advanced",
+              "advanced/additional-status-codes",
+              "advanced/response-directly",
+              "advanced/custom-response",
+              "advanced/response-cookies",
+              "advanced/response-headers",
+              "advanced/response-change-status-code"
+            ]
+          },
+          {
+            "group": "Middleware & Events",
+            "pages": [
+              "advanced/middleware",
+              "advanced/cors",
+              "advanced/events",
+              "advanced/behind-a-proxy"
+            ]
+          },
+          {
+            "group": "WebSockets & Streaming",
+            "pages": [
+              "advanced/websockets",
+              "advanced/server-sent-events",
+              "advanced/streaming"
+            ]
+          },
+          {
+            "group": "Advanced Dependencies",
+            "pages": [
+              "advanced/advanced-dependencies",
+              "advanced/dependency-overrides",
+              "advanced/sub-applications"
+            ]
+          },
+          {
+            "group": "Advanced Validation",
+            "pages": [
+              "advanced/dataclasses",
+              "advanced/custom-request-and-route",
+              "advanced/settings"
+            ]
+          },
+          {
+            "group": "OpenAPI Customization",
+            "pages": [
+              "advanced/extending-openapi",
+              "advanced/openapi-callbacks",
+              "advanced/openapi-webhooks",
+              "advanced/conditional-openapi"
+            ]
+          },
+          {
+            "group": "Templates & GraphQL",
+            "pages": [
+              "advanced/templates",
+              "advanced/graphql"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core",
+            "pages": [
+              "api/fastapi",
+              "api/apirouter",
+              "api/request",
+              "api/response",
+              "api/websocket"
+            ]
+          },
+          {
+            "group": "Parameters",
+            "pages": [
+              "api/path",
+              "api/query",
+              "api/body",
+              "api/header",
+              "api/cookie",
+              "api/form",
+              "api/file"
+            ]
+          },
+          {
+            "group": "Dependencies",
+            "pages": [
+              "api/depends",
+              "api/security"
+            ]
+          },
+          {
+            "group": "Security",
+            "pages": [
+              "api/security/oauth2",
+              "api/security/http",
+              "api/security/api-key",
+              "api/security/openid-connect"
+            ]
+          },
+          {
+            "group": "Responses",
+            "pages": [
+              "api/responses/json-response",
+              "api/responses/html-response",
+              "api/responses/streaming-response",
+              "api/responses/file-response",
+              "api/responses/redirect-response",
+              "api/responses/event-source-response"
+            ]
+          },
+          {
+            "group": "Middleware",
+            "pages": [
+              "api/middleware/cors",
+              "api/middleware/gzip",
+              "api/middleware/trusted-host",
+              "api/middleware/httpsredirect"
+            ]
+          },
+          {
+            "group": "Utilities",
+            "pages": [
+              "api/background-tasks",
+              "api/upload-file",
+              "api/http-exception",
+              "api/test-client",
+              "api/status",
+              "api/encoders"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Type-driven development with automatic validation using Python type hints",
+    "Automatic interactive API documentation (Swagger UI and ReDoc)",
+    "High performance - comparable to NodeJS and Go frameworks",
+    "Built-in dependency injection system for shared logic and resources",
+    "OAuth2 and JWT authentication with security utilities",
+    "Full async/await support with sync function compatibility",
+    "Pydantic-powered request and response validation",
+    "Automatic OpenAPI 3.1.0 schema generation",
+    "WebSocket and Server-Sent Events support",
+    "Production-ready with testing utilities and deployment guides"
+  ],
+  "publicApiSurface": [
+    "FastAPI - Main application class",
+    "APIRouter - Modular routing system",
+    "Request - HTTP request object",
+    "Response - HTTP response classes",
+    "WebSocket - WebSocket connection handling",
+    "Path - Path parameter declaration",
+    "Query - Query parameter declaration",
+    "Body - Request body declaration",
+    "Header - Header parameter declaration",
+    "Cookie - Cookie parameter declaration",
+    "Form - Form data declaration",
+    "File - File upload declaration",
+    "Depends - Dependency injection",
+    "Security - Security dependency utilities",
+    "HTTPException - HTTP exception handling",
+    "BackgroundTasks - Background task execution",
+    "UploadFile - File upload handling",
+    "status - HTTP status code constants",
+    "OAuth2PasswordBearer - OAuth2 password flow",
+    "OAuth2PasswordRequestForm - OAuth2 form data",
+    "HTTPBasic - HTTP Basic authentication",
+    "HTTPBearer - HTTP Bearer token authentication",
+    "APIKeyHeader - API key in header",
+    "APIKeyQuery - API key in query parameter",
+    "APIKeyCookie - API key in cookie",
+    "CORSMiddleware - Cross-origin resource sharing",
+    "GZipMiddleware - Response compression",
+    "TestClient - Testing utility client",
+    "JSONResponse - JSON response class",
+    "HTMLResponse - HTML response class",
+    "StreamingResponse - Streaming response class",
+    "FileResponse - File download response",
+    "RedirectResponse - Redirect response",
+    "EventSourceResponse - Server-Sent Events response"
+  ]
+}
