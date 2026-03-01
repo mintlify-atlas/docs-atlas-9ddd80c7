@@ -209,6 +209,7 @@
             "pages": [
               "api/responses/json-response",
               "api/responses/html-response",
+              "api/responses/plain-text-response",
               "api/responses/streaming-response",
               "api/responses/file-response",
               "api/responses/redirect-response",

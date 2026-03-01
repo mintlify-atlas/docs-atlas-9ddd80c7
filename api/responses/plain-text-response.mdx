@@ -1,0 +1,173 @@
+---
+title: "PlainTextResponse"
+description: "Return plain text content with the PlainTextResponse class"
+---
+
+## Overview
+
+`PlainTextResponse` is a response class that returns plain text content with the `text/plain` media type. It's useful when you need to return raw text data without HTML markup or JSON serialization.
+
+## Import
+
+```python
+from fastapi.responses import PlainTextResponse
+```
+
+## Signature
+
+```python
+PlainTextResponse(
+    content: str | bytes,
+    status_code: int = 200,
+    headers: dict[str, str] | None = None,
+    media_type: str = "text/plain",
+    background: BackgroundTask | None = None,
+)
+```
+
+## Parameters
+
+<ParamField path="content" type="str | bytes" required>
+  The plain text content to return
+</ParamField>
+
+<ParamField path="status_code" type="int" default="200">
+  HTTP status code
+</ParamField>
+
+<ParamField path="headers" type="dict[str, str] | None">
+  Additional HTTP headers
+</ParamField>
+
+<ParamField path="media_type" type="str" default="text/plain">
+  Media type for the response
+</ParamField>
+
+<ParamField path="background" type="BackgroundTask | None">
+  Background task to run after sending the response
+</ParamField>
+
+## Properties
+
+<ResponseField name="media_type" type="str">
+  Always `"text/plain"` unless explicitly overridden
+</ResponseField>
+
+## Usage
+
+### Basic plain text response
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import PlainTextResponse
+
+app = FastAPI()
+
+@app.get("/text")
+def get_text():
+    return PlainTextResponse("Hello, World!")
+```
+
+### Using `response_class` parameter
+
+```python
+@app.get("/text", response_class=PlainTextResponse)
+def get_text():
+    return "Hello, World!"
+```
+
+<Note>
+When using `response_class=PlainTextResponse`, you can return a string directly without wrapping it in `PlainTextResponse()`.
+</Note>
+
+### With custom status code
+
+```python
+@app.get("/error")
+def get_error():
+    return PlainTextResponse(
+        content="An error occurred",
+        status_code=500
+    )
+```
+
+### With custom headers
+
+```python
+@app.get("/text-with-headers")
+def get_text_with_headers():
+    return PlainTextResponse(
+        content="Hello, World!",
+        headers={"X-Custom-Header": "value"}
+    )
+```
+
+### With background task
+
+```python
+from fastapi import BackgroundTasks
+
+def log_request(message: str):
+    print(f"Logged: {message}")
+
+@app.get("/text-with-task")
+def get_text_with_task(background_tasks: BackgroundTasks):
+    background_tasks.add_task(log_request, "Request completed")
+    return PlainTextResponse("Processing...")
+```
+
+## Use cases
+
+<CardGroup cols={2}>
+  <Card title="Log files" icon="file-lines">
+    Return log file contents as plain text
+  </Card>
+  <Card title="Configuration" icon="gear">
+    Return configuration files or environment data
+  </Card>
+  <Card title="Text data" icon="align-left">
+    Return CSV, TSV, or other text-based formats
+  </Card>
+  <Card title="Debug output" icon="bug">
+    Return debugging information as plain text
+  </Card>
+</CardGroup>
+
+## Example: Returning a text file
+
+```python
+@app.get("/logs", response_class=PlainTextResponse)
+def get_logs():
+    with open("app.log", "r") as f:
+        return f.read()
+```
+
+## Example: CSV data
+
+```python
+@app.get("/users.csv", response_class=PlainTextResponse)
+def export_users():
+    csv_data = "id,name,email\n1,John Doe,john@example.com\n2,Jane Smith,jane@example.com"
+    return PlainTextResponse(
+        content=csv_data,
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=users.csv"}
+    )
+```
+
+<Note>
+While you can set a custom `media_type`, consider using `FileResponse` for actual file downloads with proper headers.
+</Note>
+
+## Comparison with other response types
+
+- **JSONResponse**: Use for structured data that needs to be parsed
+- **HTMLResponse**: Use for HTML content to be rendered in a browser
+- **PlainTextResponse**: Use for raw text data, logs, or simple text formats
+
+## Related
+
+- [JSONResponse](/api/responses/json-response) - Return JSON data
+- [HTMLResponse](/api/responses/html-response) - Return HTML content
+- [FileResponse](/api/responses/file-response) - Return files for download
+- [Response](/api/response) - Base response class
