@@ -1,80 +1,247 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quick start
+description: Build your first FastAPI application in minutes with this step-by-step guide
 ---
 
-## Get started in three steps
+# Quick start
 
-Get your documentation site running locally and make your first customization.
+Learn how to create a complete FastAPI application from scratch in just a few minutes.
 
-### Step 1: Set up your local environment
+## Prerequisites
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
+Make sure you have [installed FastAPI](/installation) before continuing.
+
+## Create your first API
+
+<Steps>
+  <Step title="Create the application file">
+    Create a new file called `main.py` with the following code:
     
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
+    ```python main.py
+    from fastapi import FastAPI
     
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
+    app = FastAPI()
     
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+    
+    @app.get("/")
+    async def root():
+        return {"message": "Hello World"}
+    
+    
+    @app.get("/items/{item_id}")
+    async def read_item(item_id: int, q: str | None = None):
+        return {"item_id": item_id, "q": q}
+    ```
+    
+    This creates a simple API with two endpoints:
+    - `GET /` - Returns a welcome message
+    - `GET /items/{item_id}` - Returns an item with optional query parameter
+  </Step>
+  
+  <Step title="Run the development server">
+    Start the FastAPI development server:
+    
+    ```bash
+    fastapi dev main.py
+    ```
+    
+    You should see output similar to:
+    
+    ```bash
+    ╭────────── FastAPI CLI - Development mode ───────────╮
+    │                                                     │
+    │  Serving at: http://127.0.0.1:8000                  │
+    │                                                     │
+    │  API docs: http://127.0.0.1:8000/docs               │
+    │                                                     │
+    │  Running in development mode, for production use:   │
+    │                                                     │
+    │  fastapi run                                        │
+    │                                                     │
+    ╰─────────────────────────────────────────────────────╯
+    
+    INFO:     Will watch for changes in these directories: ['/home/user/code']
+    INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+    INFO:     Started reloader process
+    INFO:     Started server process
+    INFO:     Waiting for application startup.
+    INFO:     Application startup complete.
+    ```
+    
+    <Note>
+      The `fastapi dev` command automatically enables hot-reload, so changes to your code will automatically restart the server.
+    </Note>
+  </Step>
+  
+  <Step title="Test your API">
+    Open your browser and navigate to:
+    
+    - **http://127.0.0.1:8000** - See the root endpoint response
+    - **http://127.0.0.1:8000/items/5?q=somequery** - Test the items endpoint
+    
+    You should see:
+    
+    ```json
+    {"item_id": 5, "q": "somequery"}
+    ```
+  </Step>
+  
+  <Step title="Explore the interactive API docs">
+    FastAPI automatically generates interactive API documentation. Open:
+    
+    **http://127.0.0.1:8000/docs**
+    
+    You'll see the Swagger UI interface where you can:
+    - View all your API endpoints
+    - See request/response schemas
+    - Test endpoints directly in the browser
+    - Download the OpenAPI specification
+    
+    <Tip>
+      There's also an alternative documentation interface at **http://127.0.0.1:8000/redoc** powered by ReDoc.
+    </Tip>
+  </Step>
+</Steps>
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+## Add request body handling
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+Let's extend the API to handle POST requests with JSON bodies:
 
-### Step 3: Go live
+```python main.py
+from fastapi import FastAPI
+from pydantic import BaseModel
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+
+class Item(BaseModel):
+    name: str
+    description: str | None = None
+    price: float
+    tax: float | None = None
+
+
+app = FastAPI()
+
+
+@app.get("/")
+async def root():
+    return {"message": "Hello World"}
+
+
+@app.get("/items/{item_id}")
+async def read_item(item_id: int, q: str | None = None):
+    return {"item_id": item_id, "q": q}
+
+
+@app.post("/items/")
+async def create_item(item: Item):
+    item_dict = item.model_dump()
+    if item.tax:
+        price_with_tax = item.price + item.tax
+        item_dict.update({"price_with_tax": price_with_tax})
+    return item_dict
+
+
+@app.put("/items/{item_id}")
+async def update_item(item_id: int, item: Item):
+    return {"item_id": item_id, "item": item}
+```
+
+<Info>
+  FastAPI uses Pydantic models for request body validation. The `Item` class defines the expected structure and types for the request data.
+</Info>
+
+## What just happened?
+
+With just a few lines of code, you've created an API that:
+
+1. **Validates data automatically** - FastAPI checks that `item_id` is an integer, rejects invalid requests
+2. **Generates schemas** - Request and response models are automatically documented
+3. **Provides type safety** - Your editor gets full autocompletion and type checking
+4. **Creates interactive docs** - Swagger UI and ReDoc are generated automatically
+5. **Handles serialization** - Python objects are automatically converted to JSON
+
+## Testing with the interactive docs
+
+<Steps>
+  <Step title="Open the docs">
+    Navigate to **http://127.0.0.1:8000/docs**
+  </Step>
+  
+  <Step title="Try the POST endpoint">
+    1. Click on `POST /items/`
+    2. Click "Try it out"
+    3. Enter a request body:
+    
+    ```json
+    {
+      "name": "Laptop",
+      "description": "A powerful laptop",
+      "price": 999.99,
+      "tax": 99.99
+    }
+    ```
+    
+    4. Click "Execute"
+  </Step>
+  
+  <Step title="View the response">
+    You'll see the response with the calculated price including tax:
+    
+    ```json
+    {
+      "name": "Laptop",
+      "description": "A powerful laptop",
+      "price": 999.99,
+      "tax": 99.99,
+      "price_with_tax": 1099.98
+    }
+    ```
+  </Step>
+</Steps>
+
+## Running in production
+
+When you're ready to deploy, use the `fastapi run` command instead:
+
+```bash
+fastapi run main.py
+```
+
+This starts the server in production mode without auto-reload.
+
+<Warning>
+  For production deployments, configure proper settings for workers, logging, and security. See the deployment guide for more details.
+</Warning>
+
+## Alternative: Using uvicorn directly
+
+You can also run your FastAPI app with uvicorn directly:
+
+<CodeGroup>
+```bash Development
+uvicorn main:app --reload
+```
+
+```bash Production
+uvicorn main:app --host 0.0.0.0 --port 8000
+```
+</CodeGroup>
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
+Now that you've created your first FastAPI application, dive deeper into the framework:
 
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="First steps tutorial" icon="graduation-cap" href="/tutorial/first-steps">
+    Learn FastAPI fundamentals in detail
+  </Card>
+  <Card title="Path operations" icon="route" href="/tutorial/path-operations">
+    Master routing and HTTP methods
+  </Card>
+  <Card title="Request body" icon="file-code" href="/tutorial/body">
+    Work with complex request data
+  </Card>
+  <Card title="Dependencies" icon="plug" href="/tutorial/dependencies">
+    Use dependency injection
+  </Card>
 </CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>

@@ -1,0 +1,117 @@
+---
+title: 'Depends'
+description: 'Declare dependencies in FastAPI path operations for dependency injection'
+---
+
+## Overview
+
+The `Depends` class is used to declare dependencies in FastAPI path operations. Dependencies are callable functions that can be reused across multiple endpoints and execute before the path operation function.
+
+## Signature
+
+```python
+from fastapi import Depends
+
+@dataclass(frozen=True)
+class Depends:
+    dependency: Callable[..., Any] | None = None
+    use_cache: bool = True
+    scope: Literal["function", "request"] | None = None
+```
+
+## Parameters
+
+<ParamField path="dependency" type="Callable[..., Any] | None" default="None">
+  The callable that will be called as a dependency. Can be a function, class, or any callable object. FastAPI will call this dependency and provide its return value to your path operation function.
+</ParamField>
+
+<ParamField path="use_cache" type="bool" default="True">
+  Whether to cache the result of the dependency within the same request. When `True`, if the same dependency is used multiple times in a single request, it will only be executed once and the result will be cached. Set to `False` to execute the dependency every time it's called.
+</ParamField>
+
+<ParamField path="scope" type="Literal['function', 'request'] | None" default="None">
+  The scope in which the dependency operates. Can be:
+  - `"function"`: Dependency is executed per path operation function
+  - `"request"`: Dependency is executed once per request
+  - `None`: Use default behavior
+</ParamField>
+
+## Usage
+
+### Basic Dependency
+
+```python
+from fastapi import Depends, FastAPI
+
+app = FastAPI()
+
+def common_parameters(q: str | None = None, skip: int = 0, limit: int = 100):
+    return {"q": q, "skip": skip, "limit": limit}
+
+@app.get("/items/")
+def read_items(commons: dict = Depends(common_parameters)):
+    return commons
+```
+
+### Dependency with Class
+
+```python
+from fastapi import Depends, FastAPI
+
+class CommonQueryParams:
+    def __init__(self, q: str | None = None, skip: int = 0, limit: int = 100):
+        self.q = q
+        self.skip = skip
+        self.limit = limit
+
+app = FastAPI()
+
+@app.get("/items/")
+def read_items(commons: CommonQueryParams = Depends(CommonQueryParams)):
+    return commons
+```
+
+### Disabling Cache
+
+```python
+from fastapi import Depends, FastAPI
+import time
+
+app = FastAPI()
+
+def get_timestamp():
+    return {"timestamp": time.time()}
+
+@app.get("/timestamp/")
+def read_timestamp(
+    # Each call returns a different timestamp
+    ts1: dict = Depends(get_timestamp, use_cache=False),
+    ts2: dict = Depends(get_timestamp, use_cache=False),
+):
+    return {"first": ts1, "second": ts2}
+```
+
+### Nested Dependencies
+
+```python
+from fastapi import Depends, FastAPI
+
+app = FastAPI()
+
+def query_extractor(q: str | None = None):
+    return q
+
+def query_or_default(q: str = Depends(query_extractor)):
+    if q is None:
+        return "default"
+    return q
+
+@app.get("/items/")
+def read_items(query: str = Depends(query_or_default)):
+    return {"query": query}
+```
+
+## See Also
+
+- [Security](/api/security) - Enhanced dependency for security and authentication
+- [FastAPI Dependencies Documentation](https://fastapi.tiangolo.com/tutorial/dependencies/)

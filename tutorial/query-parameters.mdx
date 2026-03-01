@@ -1,0 +1,266 @@
+---
+title: Query Parameters
+description: Learn how to work with query parameters in FastAPI including optional parameters, defaults, and validation with Query()
+---
+
+Query parameters are the key-value pairs that appear after the `?` in a URL. FastAPI makes them easy to declare and validate.
+
+## Basic Query Parameters
+
+When you declare function parameters that aren't part of the path, they're automatically interpreted as query parameters:
+
+```python
+from fastapi import FastAPI
+
+app = FastAPI()
+
+fake_items_db = [{"item_name": "Foo"}, {"item_name": "Bar"}, {"item_name": "Baz"}]
+
+@app.get("/items/")
+async def read_item(skip: int = 0, limit: int = 10):
+    return fake_items_db[skip : skip + limit]
+```
+
+The query parameters:
+- `skip`: defaults to 0
+- `limit`: defaults to 10
+
+Example requests:
+- `http://localhost:8000/items/` → skip=0, limit=10
+- `http://localhost:8000/items/?skip=20` → skip=20, limit=10
+- `http://localhost:8000/items/?skip=0&limit=20` → skip=0, limit=20
+
+## Optional Query Parameters
+
+Use `None` as the default value to make query parameters optional:
+
+```python
+from fastapi import FastAPI
+
+app = FastAPI()
+
+@app.get("/items/")
+async def read_items(q: str | None = None):
+    results = {"items": [{"item_id": "Foo"}, {"item_id": "Bar"}]}
+    if q:
+        results.update({"q": q})
+    return results
+```
+
+<Info>
+The `| None` type annotation (or `Optional[str]` in older Python) tells FastAPI this parameter is optional.
+</Info>
+
+## Required Query Parameters
+
+To make a query parameter required, declare it without a default value:
+
+```python
+from fastapi import FastAPI
+
+app = FastAPI()
+
+@app.get("/items/{item_id}")
+async def read_user_item(item_id: str, needy: str):
+    item = {"item_id": item_id, "needy": needy}
+    return item
+```
+
+Here, `needy` is required. Requests without it will get a validation error.
+
+<CodeGroup>
+```bash Valid Request
+curl http://localhost:8000/items/foo-item?needy=someneedy
+```
+
+```bash Invalid Request (422 Error)
+curl http://localhost:8000/items/foo-item
+# Missing required parameter 'needy'
+```
+</CodeGroup>
+
+## Using Query() for Advanced Validation
+
+The `Query()` function provides additional validation and documentation options:
+
+```python
+from fastapi import FastAPI, Query
+
+app = FastAPI()
+
+@app.get("/items/")
+async def read_items(q: str = Query(min_length=3)):
+    results = {"items": [{"item_id": "Foo"}, {"item_id": "Bar"}]}
+    if q:
+        results.update({"q": q})
+    return results
+```
+
+### String Validations
+
+<Steps>
+  <Step title="Length Constraints">
+    ```python
+    q: str = Query(min_length=3, max_length=50)
+    ```
+  </Step>
+  
+  <Step title="Regex Pattern">
+    ```python
+    q: str = Query(pattern="^fixedquery$")
+    ```
+  </Step>
+  
+  <Step title="Multiple Values">
+    ```python
+    q: list[str] = Query()
+    # GET /items/?q=foo&q=bar
+    ```
+  </Step>
+</Steps>
+
+## Required Query Parameters with Query()
+
+You can make a query parameter required while still using `Query()` for validation:
+
+```python
+from fastapi import FastAPI, Query
+
+app = FastAPI()
+
+@app.get("/items/")
+async def read_items(
+    q: str = Query(min_length=3, max_length=50, description="Query string")
+):
+    results = {"items": [{"item_id": "Foo"}, {"item_id": "Bar"}]}
+    if q:
+        results.update({"q": q})
+    return results
+```
+
+<Note>
+When using `Query()`, the parameter is required unless you provide `default=None` or another default value.
+</Note>
+
+## Query Parameter Lists
+
+You can receive multiple values for the same query parameter:
+
+```python
+from fastapi import FastAPI, Query
+
+app = FastAPI()
+
+@app.get("/items/")
+async def read_items(q: list[str] | None = Query(default=None)):
+    query_items = {"q": q}
+    return query_items
+```
+
+Example request:
+```
+http://localhost:8000/items/?q=foo&q=bar
+```
+
+Response:
+```json
+{
+  "q": ["foo", "bar"]
+}
+```
+
+## Alias Parameters
+
+Use aliases when you need parameter names that aren't valid Python identifiers:
+
+```python
+from fastapi import FastAPI, Query
+
+app = FastAPI()
+
+@app.get("/items/")
+async def read_items(
+    q: str | None = Query(default=None, alias="item-query")
+):
+    results = {"items": [{"item_id": "Foo"}, {"item_id": "Bar"}]}
+    if q:
+        results.update({"q": q})
+    return results
+```
+
+Now the URL parameter is `item-query` instead of `q`:
+```
+http://localhost:8000/items/?item-query=foobar
+```
+
+## Deprecating Parameters
+
+You can mark parameters as deprecated:
+
+```python
+from fastapi import FastAPI, Query
+
+app = FastAPI()
+
+@app.get("/items/")
+async def read_items(
+    q: str | None = Query(
+        default=None,
+        deprecated=True,
+        description="This parameter is deprecated"
+    )
+):
+    results = {"items": [{"item_id": "Foo"}, {"item_id": "Bar"}]}
+    if q:
+        results.update({"q": q})
+    return results
+```
+
+<Warning>
+Deprecated parameters will be marked as such in the OpenAPI documentation.
+</Warning>
+
+## Available Query() Parameters
+
+### Validation
+- `min_length`, `max_length`: String length constraints
+- `pattern`: Regex pattern for string validation
+- `gt`, `ge`, `lt`, `le`: Numeric comparisons
+
+### Documentation
+- `title`: Short title for docs
+- `description`: Detailed description
+- `examples`: Example values
+- `deprecated`: Mark as deprecated
+
+### Behavior
+- `alias`: Use a different name in the URL
+- `include_in_schema`: Hide from OpenAPI docs
+
+## Combining Path and Query Parameters
+
+```python
+from fastapi import FastAPI, Path, Query
+
+app = FastAPI()
+
+@app.get("/items/{item_id}")
+async def read_items(
+    item_id: int = Path(title="The ID of the item to get"),
+    q: str | None = Query(default=None, alias="item-query"),
+):
+    results = {"item_id": item_id}
+    if q:
+        results.update({"q": q})
+    return results
+```
+
+<Tip>
+FastAPI automatically knows which parameters are path parameters (they're in the URL path) and which are query parameters (everything else).
+</Tip>
+
+## Related Topics
+
+- [Path Parameters](/tutorial/path-parameters) - Learn about URL path parameters
+- [Request Body](/tutorial/request-body) - Handle complex data with Pydantic models
+- [Header Parameters](/tutorial/header-params) - Read HTTP headers

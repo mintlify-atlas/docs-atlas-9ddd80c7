@@ -1,0 +1,356 @@
+---
+title: "Custom Response Classes"
+description: "Learn about FastAPI's built-in response classes and how to use HTMLResponse, PlainTextResponse, JSONResponse, and other custom responses"
+---
+
+## Overview
+
+FastAPI provides several response classes for different content types. By default, FastAPI returns responses as JSON, but you can customize this behavior using different response classes.
+
+## Available Response Classes
+
+FastAPI (via Starlette) provides these response classes:
+
+- `JSONResponse` - JSON responses (default)
+- `HTMLResponse` - HTML content
+- `PlainTextResponse` - Plain text
+- `RedirectResponse` - HTTP redirects
+- `StreamingResponse` - Streaming responses
+- `FileResponse` - File downloads
+- `Response` - Generic response class
+
+## JSONResponse
+
+The default response class for most FastAPI endpoints:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+
+app = FastAPI()
+
+@app.get("/items/")
+def read_items():
+    return JSONResponse(content={"message": "Hello World"})
+```
+
+<Info>
+You typically don't need to use `JSONResponse` explicitly - FastAPI uses it by default when you return a dict, list, or Pydantic model.
+</Info>
+
+## HTMLResponse
+
+Return HTML content from your endpoints:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
+
+app = FastAPI()
+
+@app.get("/items/", response_class=HTMLResponse)
+async def read_items():
+    return """
+    <html>
+        <head>
+            <title>Some HTML in here</title>
+        </head>
+        <body>
+            <h1>Look ma! HTML!</h1>
+        </body>
+    </html>
+    """
+```
+
+### Direct HTMLResponse
+
+You can also return an `HTMLResponse` object directly:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
+
+app = FastAPI()
+
+@app.get("/items/")
+async def read_items():
+    html_content = """
+    <html>
+        <head>
+            <title>Some HTML in here</title>
+        </head>
+        <body>
+            <h1>Look ma! HTML!</h1>
+        </body>
+    </html>
+    """
+    return HTMLResponse(content=html_content, status_code=200)
+```
+
+<Tip>
+When using `response_class=HTMLResponse`, you can return the HTML as a string directly. When returning `HTMLResponse` objects, you have more control over status codes and headers.
+</Tip>
+
+## PlainTextResponse
+
+Return plain text content:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import PlainTextResponse
+
+app = FastAPI()
+
+@app.get("/text/", response_class=PlainTextResponse)
+async def read_text():
+    return "Hello, World!"
+```
+
+Or directly:
+
+```python
+@app.get("/text/")
+async def read_text():
+    return PlainTextResponse(content="Hello, World!")
+```
+
+## RedirectResponse
+
+Redirect to another URL:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
+
+app = FastAPI()
+
+@app.get("/old-path")
+async def redirect_old_path():
+    return RedirectResponse(url="/new-path")
+
+@app.get("/new-path")
+async def new_path():
+    return {"message": "This is the new path"}
+```
+
+### Redirect Status Codes
+
+Control the redirect type with status codes:
+
+```python
+from fastapi import status
+from fastapi.responses import RedirectResponse
+
+# Temporary redirect (default is 307)
+@app.get("/temp-redirect")
+async def temp_redirect():
+    return RedirectResponse(
+        url="/new-path",
+        status_code=status.HTTP_307_TEMPORARY_REDIRECT
+    )
+
+# Permanent redirect
+@app.get("/permanent-redirect")
+async def permanent_redirect():
+    return RedirectResponse(
+        url="/new-path",
+        status_code=status.HTTP_308_PERMANENT_REDIRECT
+    )
+```
+
+<Note>
+- Use `307` (Temporary Redirect) to preserve the request method
+- Use `308` (Permanent Redirect) for permanent redirects that preserve the method
+- Use `302` (Found) for temporary redirects that may change the method to GET
+- Use `301` (Moved Permanently) for permanent redirects that may change the method
+</Note>
+
+## StreamingResponse
+
+Stream large files or generated content:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
+import io
+
+app = FastAPI()
+
+@app.get("/stream/")
+async def stream_data():
+    def generate():
+        for i in range(10):
+            yield f"data chunk {i}\n"
+    
+    return StreamingResponse(
+        generate(),
+        media_type="text/plain"
+    )
+```
+
+### Streaming Files
+
+Stream file content:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
+
+app = FastAPI()
+
+@app.get("/video/")
+def stream_video():
+    file_path = "large_video.mp4"
+    
+    def iterfile():
+        with open(file_path, "rb") as file:
+            yield from file
+    
+    return StreamingResponse(
+        iterfile(),
+        media_type="video/mp4"
+    )
+```
+
+<Warning>
+For static files, consider using `FileResponse` instead, as it's optimized for serving files efficiently.
+</Warning>
+
+## FileResponse
+
+Serve files efficiently with proper headers:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import FileResponse
+
+app = FastAPI()
+
+@app.get("/download/")
+async def download_file():
+    file_path = "example.pdf"
+    return FileResponse(
+        path=file_path,
+        filename="downloaded_file.pdf",
+        media_type="application/pdf"
+    )
+```
+
+### File Download with Custom Headers
+
+```python
+@app.get("/download-with-headers/")
+async def download_with_headers():
+    return FileResponse(
+        path="example.csv",
+        filename="data.csv",
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": "attachment; filename=data.csv"
+        }
+    )
+```
+
+## Setting Default Response Class
+
+Set a default response class for your entire app or router:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
+
+app = FastAPI(default_response_class=HTMLResponse)
+
+@app.get("/items/")
+async def read_items():
+    return "<h1>Items</h1>"
+```
+
+Or for a router:
+
+```python
+from fastapi import APIRouter
+from fastapi.responses import JSONResponse
+
+router = APIRouter(default_response_class=JSONResponse)
+```
+
+## Custom Response Classes
+
+Create your own response class:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import Response
+import yaml
+
+class YAMLResponse(Response):
+    media_type = "application/x-yaml"
+
+    def render(self, content: dict) -> bytes:
+        return yaml.dump(content).encode("utf-8")
+
+app = FastAPI()
+
+@app.get("/yaml/", response_class=YAMLResponse)
+async def get_yaml():
+    return {"message": "Hello World", "items": [1, 2, 3]}
+```
+
+<Tip>
+Custom response classes are useful for supporting additional content types like XML, YAML, MessagePack, or proprietary formats.
+</Tip>
+
+## ORJSONResponse (Deprecated)
+
+<Warning>
+`ORJSONResponse` and `UJSONResponse` are now deprecated. FastAPI serializes data directly to JSON bytes via Pydantic when a return type or response model is set, which is faster and doesn't need a custom response class.
+</Warning>
+
+If you still need orjson for specific use cases:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import ORJSONResponse
+
+app = FastAPI()
+
+# Note: This is deprecated
+@app.get("/items/", response_class=ORJSONResponse)
+async def read_items():
+    return [{"item_id": "Foo"}]
+```
+
+## Response Class vs Response Model
+
+Understand the difference:
+
+- **`response_model`**: Defines the data structure/schema for validation and documentation
+- **`response_class`**: Defines how the response is formatted and sent (HTML, JSON, etc.)
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class Item(BaseModel):
+    name: str
+    price: float
+
+# response_model for validation/docs, response_class for formatting
+@app.get("/items/", response_model=Item, response_class=JSONResponse)
+async def read_item():
+    return {"name": "Portal Gun", "price": 42.0}
+```
+
+## Best Practices
+
+1. **Use the right class**: Choose the response class that matches your content type
+2. **Set at the decorator**: Use `response_class` parameter in the path decorator for clarity
+3. **Default wisely**: Set default response classes at the app or router level when appropriate
+4. **Stream large data**: Use `StreamingResponse` for large files or generated content
+5. **Serve static files properly**: Use `FileResponse` for static files, not `StreamingResponse`
+6. **Document custom types**: When using custom response classes, document them properly
+7. **Consider performance**: Modern FastAPI with Pydantic v2 is very fast - custom JSON serializers are rarely needed

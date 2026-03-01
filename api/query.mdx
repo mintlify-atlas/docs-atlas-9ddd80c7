@@ -1,0 +1,249 @@
+---
+title: Query
+description: API reference for the FastAPI Query parameter function
+---
+
+# Query
+
+Declare a query parameter for a path operation. Query parameters are the key-value pairs that appear after the `?` in a URL.
+
+```python
+from typing import Annotated
+from fastapi import FastAPI, Query
+
+app = FastAPI()
+
+@app.get("/items/")
+async def read_items(
+    q: Annotated[str | None, Query(max_length=50)] = None
+):
+    results = {"items": [{"item_id": "Foo"}, {"item_id": "Bar"}]}
+    if q:
+        results.update({"q": q})
+    return results
+```
+
+## Signature
+
+```python
+def Query(
+    default: Any = Undefined,
+    *,
+    alias: str | None = None,
+    title: str | None = None,
+    description: str | None = None,
+    gt: float | None = None,
+    ge: float | None = None,
+    lt: float | None = None,
+    le: float | None = None,
+    min_length: int | None = None,
+    max_length: int | None = None,
+    pattern: str | None = None,
+    examples: list[Any] | None = None,
+    deprecated: bool | str | None = None,
+    include_in_schema: bool = True,
+    json_schema_extra: dict[str, Any] | None = None,
+) -> Any
+```
+
+## Parameters
+
+<ParamField path="default" type="Any" default="Undefined">
+  Default value if the parameter field is not set. If not provided, the query parameter will be required.
+</ParamField>
+
+<ParamField path="alias" type="str | None" default="None">
+  An alternative name for the parameter field. This will be used to extract the data and for the generated OpenAPI. Particularly useful when you can't use the name you want because it is a Python reserved keyword.
+</ParamField>
+
+<ParamField path="title" type="str | None" default="None">
+  Human-readable title for the parameter.
+</ParamField>
+
+<ParamField path="description" type="str | None" default="None">
+  Human-readable description for the parameter.
+</ParamField>
+
+<ParamField path="gt" type="float | None" default="None">
+  Greater than validation. If set, the value must be greater than this. Only applicable to numbers.
+</ParamField>
+
+<ParamField path="ge" type="float | None" default="None">
+  Greater than or equal validation. If set, the value must be greater than or equal to this. Only applicable to numbers.
+</ParamField>
+
+<ParamField path="lt" type="float | None" default="None">
+  Less than validation. If set, the value must be less than this. Only applicable to numbers.
+</ParamField>
+
+<ParamField path="le" type="float | None" default="None">
+  Less than or equal validation. If set, the value must be less than or equal to this. Only applicable to numbers.
+</ParamField>
+
+<ParamField path="min_length" type="int | None" default="None">
+  Minimum length for strings.
+</ParamField>
+
+<ParamField path="max_length" type="int | None" default="None">
+  Maximum length for strings.
+</ParamField>
+
+<ParamField path="pattern" type="str | None" default="None">
+  RegEx pattern for strings.
+</ParamField>
+
+<ParamField path="discriminator" type="str | None" default="None">
+  Parameter field name for discriminating the type in a tagged union.
+</ParamField>
+
+<ParamField path="strict" type="bool | None" default="None">
+  If True, strict validation is applied to the field.
+</ParamField>
+
+<ParamField path="multiple_of" type="float | None" default="None">
+  Value must be a multiple of this. Only applicable to numbers.
+</ParamField>
+
+<ParamField path="allow_inf_nan" type="bool | None" default="None">
+  Allow `inf`, `-inf`, `nan`. Only applicable to numbers.
+</ParamField>
+
+<ParamField path="max_digits" type="int | None" default="None">
+  Maximum number of allowed digits for numbers.
+</ParamField>
+
+<ParamField path="decimal_places" type="int | None" default="None">
+  Maximum number of decimal places allowed for numbers.
+</ParamField>
+
+<ParamField path="examples" type="list[Any] | None" default="None">
+  Example values for this field.
+</ParamField>
+
+<ParamField path="deprecated" type="bool | str | None" default="None">
+  Mark this parameter field as deprecated. It will affect the generated OpenAPI (visible at `/docs`).
+</ParamField>
+
+<ParamField path="include_in_schema" type="bool" default="True">
+  Whether to include this parameter field in the generated OpenAPI.
+</ParamField>
+
+<ParamField path="json_schema_extra" type="dict[str, Any] | None" default="None">
+  Any additional JSON schema data.
+</ParamField>
+
+## Examples
+
+### Optional Query Parameter
+
+```python
+from typing import Annotated
+from fastapi import FastAPI, Query
+
+app = FastAPI()
+
+@app.get("/items/")
+async def read_items(q: Annotated[str | None, Query()] = None):
+    results = {"items": [{"item_id": "Foo"}, {"item_id": "Bar"}]}
+    if q:
+        results.update({"q": q})
+    return results
+```
+
+### Required Query Parameter
+
+```python
+@app.get("/items/")
+async def read_items(q: Annotated[str, Query(min_length=3)]):
+    return {"q": q}
+```
+
+<Note>
+  A query parameter is required when there is no default value.
+</Note>
+
+### Query Parameter with Default Value
+
+```python
+@app.get("/items/")
+async def read_items(
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=100)] = 10
+):
+    return {"skip": skip, "limit": limit}
+```
+
+### String Validations
+
+```python
+@app.get("/items/")
+async def read_items(
+    q: Annotated[str | None, Query(min_length=3, max_length=50)] = None
+):
+    return {"q": q}
+```
+
+### Pattern Validation
+
+```python
+@app.get("/items/")
+async def read_items(
+    q: Annotated[str | None, Query(pattern="^fixedquery$")] = None
+):
+    return {"q": q}
+```
+
+### Query Parameter with Alias
+
+```python
+@app.get("/items/")
+async def read_items(
+    item_query: Annotated[str | None, Query(alias="item-query")] = None
+):
+    return {"item_query": item_query}
+```
+
+<Note>
+  Use `alias` when the query parameter name in the URL needs to be different from the Python variable name (e.g., for kebab-case parameters).
+</Note>
+
+### Deprecating Parameters
+
+```python
+@app.get("/items/")
+async def read_items(
+    q: Annotated[str | None, Query(deprecated=True)] = None
+):
+    return {"q": q}
+```
+
+### Exclude from OpenAPI
+
+```python
+@app.get("/items/")
+async def read_items(
+    hidden: Annotated[str | None, Query(include_in_schema=False)] = None
+):
+    return {"hidden": hidden}
+```
+
+<Note>
+  Setting `include_in_schema=False` hides the parameter from the auto-generated API documentation.
+</Note>
+
+## List Query Parameters
+
+```python
+from typing import Annotated
+from fastapi import FastAPI, Query
+
+app = FastAPI()
+
+@app.get("/items/")
+async def read_items(q: Annotated[list[str] | None, Query()] = None):
+    return {"q": q}
+```
+
+<Note>
+  This allows multiple values for the same query parameter: `/items/?q=foo&q=bar`
+</Note>

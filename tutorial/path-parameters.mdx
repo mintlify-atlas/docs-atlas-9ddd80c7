@@ -1,0 +1,191 @@
+---
+title: Path Parameters
+description: Learn how to declare path parameters in FastAPI with type validation, enums, and the Path() function
+---
+
+Path parameters are parts of the URL path that are captured as function parameters. FastAPI makes it easy to declare them with automatic type conversion and validation.
+
+## Basic Path Parameters
+
+Declare path parameters using curly braces `{}` in the path, and they will be passed to your function:
+
+```python
+from fastapi import FastAPI
+
+app = FastAPI()
+
+@app.get("/items/{item_id}")
+async def read_item(item_id: int):
+    return {"item_id": item_id}
+```
+
+The path parameter `item_id` is automatically:
+- Extracted from the URL
+- Converted to the declared type (`int`)
+- Validated (returns 422 error if not an integer)
+- Passed to your function
+
+## Type Conversion and Validation
+
+FastAPI automatically validates and converts path parameters based on their type annotations:
+
+<CodeGroup>
+```python Integer Validation
+@app.get("/items/{item_id}")
+async def read_item(item_id: int):
+    return {"item_id": item_id}
+# GET /items/42 → {"item_id": 42}
+# GET /items/foo → Validation error (422)
+```
+
+```python String Parameters
+@app.get("/users/{user_id}")
+async def read_user(user_id: str):
+    return {"user_id": user_id}
+# Any string value is accepted
+```
+</CodeGroup>
+
+## Order Matters
+
+When you have paths that could match multiple patterns, order matters. More specific paths should come first:
+
+```python
+from fastapi import FastAPI
+
+app = FastAPI()
+
+# This must come first
+@app.get("/users/me")
+async def read_user_me():
+    return {"user_id": "the current user"}
+
+# This comes after
+@app.get("/users/{user_id}")
+async def read_user(user_id: str):
+    return {"user_id": user_id}
+```
+
+<Warning>
+If you put the generic `/users/{user_id}` route first, it would match `/users/me` and try to use "me" as the user_id parameter.
+</Warning>
+
+## Enum Path Parameters
+
+You can use Python Enums to restrict path parameter values:
+
+```python
+from enum import Enum
+from fastapi import FastAPI
+
+class ModelName(str, Enum):
+    alexnet = "alexnet"
+    resnet = "resnet"
+    lenet = "lenet"
+
+app = FastAPI()
+
+@app.get("/models/{model_name}")
+async def get_model(model_name: ModelName):
+    if model_name is ModelName.alexnet:
+        return {"model_name": model_name, "message": "Deep Learning FTW!"}
+    
+    if model_name.value == "lenet":
+        return {"model_name": model_name, "message": "LeCNN all the images"}
+    
+    return {"model_name": model_name, "message": "Have some residuals"}
+```
+
+<Info>
+The enum values will be available in the OpenAPI docs, and only those values will be accepted.
+</Info>
+
+## Using Path() for Metadata and Validation
+
+The `Path()` function allows you to add metadata and validation constraints:
+
+```python
+from fastapi import FastAPI, Path, Query
+
+app = FastAPI()
+
+@app.get("/items/{item_id}")
+async def read_items(
+    item_id: int = Path(title="The ID of the item to get"),
+    q: str | None = Query(default=None, alias="item-query"),
+):
+    results = {"item_id": item_id}
+    if q:
+        results.update({"q": q})
+    return results
+```
+
+### Numeric Validations
+
+You can add numeric constraints to path parameters:
+
+```python
+from fastapi import FastAPI, Path
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class Item(BaseModel):
+    name: str
+    description: str | None = None
+    price: float
+    tax: float | None = None
+
+@app.put("/items/{item_id}")
+async def update_item(
+    *,
+    item_id: int = Path(title="The ID of the item to get", ge=0, le=1000),
+    q: str | None = None,
+    item: Item | None = None,
+):
+    results = {"item_id": item_id}
+    if q:
+        results.update({"q": q})
+    if item:
+        results.update({"item": item})
+    return results
+```
+
+### Available Validation Parameters
+
+<Steps>
+  <Step title="Numeric Constraints">
+    - `gt`: Greater than
+    - `ge`: Greater than or equal
+    - `lt`: Less than
+    - `le`: Less than or equal
+  </Step>
+  
+  <Step title="String Constraints">
+    - `min_length`: Minimum string length
+    - `max_length`: Maximum string length
+    - `pattern`: Regex pattern to match
+  </Step>
+  
+  <Step title="Documentation">
+    - `title`: Title for documentation
+    - `description`: Description for documentation
+    - `examples`: Example values
+  </Step>
+</Steps>
+
+## Key Points
+
+<Note>
+- Path parameters are always required (they're part of the URL)
+- They're automatically validated based on type annotations
+- You can use Enums to restrict to specific values
+- Use `Path()` to add metadata and validation constraints
+- Order your routes from most specific to most generic
+</Note>
+
+## Related Topics
+
+- [Query Parameters](/tutorial/query-parameters) - Learn about optional URL parameters
+- [Request Body](/tutorial/request-body) - Handle complex data with Pydantic models
+- [Extra Data Types](/tutorial/extra-data-types) - Use UUID, datetime, and more

@@ -1,0 +1,329 @@
+---
+title: First steps
+description: Learn the fundamental concepts of FastAPI by building your first application from scratch
+---
+
+# First steps
+
+This tutorial will guide you through the fundamental concepts of FastAPI by building a simple API application.
+
+## The simplest FastAPI application
+
+Let's start with the most basic FastAPI application possible:
+
+```python main.py
+from fastapi import FastAPI
+
+app = FastAPI()
+
+
+@app.get("/")
+async def root():
+    return {"message": "Hello World"}
+```
+
+### Breaking it down
+
+Let's examine each part of this code:
+
+#### Import FastAPI
+
+```python
+from fastapi import FastAPI
+```
+
+`FastAPI` is the main class that provides all the functionality for your API application.
+
+#### Create a FastAPI instance
+
+```python
+app = FastAPI()
+```
+
+This creates your application instance. The `app` variable will be the main point of interaction for your entire API.
+
+<Info>
+  This `app` is the same one referred to by `uvicorn` when you run `uvicorn main:app`. It tells uvicorn to import the `app` object from the `main` module.
+</Info>
+
+#### Create a path operation
+
+```python
+@app.get("/")
+async def root():
+    return {"message": "Hello World"}
+```
+
+This defines a path operation:
+
+- **`@app.get("/")`** - This is a decorator that tells FastAPI that the function below handles requests to the path `/` using the HTTP `GET` method
+- **`async def root()`** - This is the path operation function that will be executed when the endpoint is called
+- **`return {"message": "Hello World"}`** - FastAPI automatically converts the Python dictionary to JSON
+
+## Path operation decorators
+
+FastAPI provides decorators for all standard HTTP methods:
+
+- `@app.get()` - Read data
+- `@app.post()` - Create data  
+- `@app.put()` - Update data (full replacement)
+- `@app.delete()` - Delete data
+- `@app.patch()` - Update data (partial update)
+- `@app.options()` - Return allowed methods
+- `@app.head()` - Return headers only
+- `@app.trace()` - Message loop-back test
+
+### Example with multiple methods
+
+```python
+from fastapi import FastAPI
+
+app = FastAPI()
+
+
+@app.get("/items/")
+async def read_items():
+    return [{"name": "Item 1"}, {"name": "Item 2"}]
+
+
+@app.post("/items/")
+async def create_item():
+    return {"message": "Item created"}
+
+
+@app.put("/items/{item_id}")
+async def update_item(item_id: int):
+    return {"message": f"Item {item_id} updated"}
+
+
+@app.delete("/items/{item_id}")  
+async def delete_item(item_id: int):
+    return {"message": f"Item {item_id} deleted"}
+```
+
+## Path parameters
+
+You can declare path parameters with the same syntax used by Python format strings:
+
+```python
+from fastapi import FastAPI
+
+app = FastAPI()
+
+
+@app.get("/items/{item_id}")
+async def read_item(item_id):
+    return {"item_id": item_id}
+```
+
+The value of the path parameter `item_id` will be passed to your function as the argument `item_id`.
+
+### Path parameters with types
+
+You can declare the type of a path parameter using standard Python type annotations:
+
+```python
+from fastapi import FastAPI
+
+app = FastAPI()
+
+
+@app.get("/items/{item_id}")
+async def read_item(item_id: int):
+    return {"item_id": item_id}
+```
+
+<Note>
+  By declaring `item_id: int`, FastAPI will automatically:
+  - Validate that the path parameter is an integer
+  - Convert the string from the URL to an integer
+  - Return an error if validation fails
+  - Provide editor support with autocompletion and type checking
+</Note>
+
+### Data validation example
+
+If you run the server and navigate to **http://127.0.0.1:8000/items/3**, you'll see:
+
+```json
+{"item_id": 3}
+```
+
+But if you go to **http://127.0.0.1:8000/items/foo**, you'll get a validation error:
+
+```json
+{
+  "detail": [
+    {
+      "type": "int_parsing",
+      "loc": ["path", "item_id"],
+      "msg": "Input should be a valid integer, unable to parse string as an integer",
+      "input": "foo"
+    }
+  ]
+}
+```
+
+## Query parameters
+
+When you declare function parameters that are not part of the path, they are automatically interpreted as query parameters:
+
+```python
+from fastapi import FastAPI
+
+app = FastAPI()
+
+fake_items_db = [{"item_name": "Foo"}, {"item_name": "Bar"}, {"item_name": "Baz"}]
+
+
+@app.get("/items/")
+async def read_item(skip: int = 0, limit: int = 10):
+    return fake_items_db[skip : skip + limit]
+```
+
+The query is the set of key-value pairs after the `?` in a URL, separated by `&`:
+
+**http://127.0.0.1:8000/items/?skip=0&limit=10**
+
+In this example:
+- `skip=0`
+- `limit=10`
+
+### Optional query parameters
+
+You can declare optional query parameters by setting their default to `None`:
+
+```python
+from fastapi import FastAPI
+
+app = FastAPI()
+
+
+@app.get("/items/{item_id}")
+async def read_item(item_id: int, q: str | None = None):
+    if q:
+        return {"item_id": item_id, "q": q}
+    return {"item_id": item_id}
+```
+
+In this case, the parameter `q` is optional and will be `None` by default.
+
+<Tip>
+  FastAPI is smart enough to know that `item_id` is a path parameter and `q` is a query parameter.
+</Tip>
+
+## Running the application
+
+Save your code in a file called `main.py`, then run it with:
+
+### Using the FastAPI CLI
+
+```bash
+fastapi dev main.py
+```
+
+This starts a development server with:
+- Auto-reload on code changes
+- Interactive API docs at **/docs**
+- Alternative docs at **/redoc**
+
+### Using uvicorn directly
+
+Alternatively, you can use uvicorn:
+
+```bash
+uvicorn main:app --reload
+```
+
+Where:
+- `main` - The Python file `main.py` (a Python "module")
+- `app` - The object created inside `main.py` with `app = FastAPI()`
+- `--reload` - Restart the server when code changes (development only)
+
+## Check the interactive API documentation
+
+Once your server is running, open your browser at:
+
+**http://127.0.0.1:8000/docs**
+
+You'll see the automatic interactive API documentation provided by Swagger UI:
+
+- All your endpoints are listed
+- You can test each endpoint directly from the browser
+- Request and response schemas are automatically generated
+- Try clicking "Try it out" on any endpoint to test it
+
+### Alternative documentation
+
+You can also check the alternative automatic documentation at:
+
+**http://127.0.0.1:8000/redoc**
+
+## Async or not async?
+
+In the examples above, we used `async def` for the path operation functions. You can also use regular `def`:
+
+```python
+from fastapi import FastAPI
+
+app = FastAPI()
+
+
+@app.get("/")
+def root():
+    return {"message": "Hello World"}
+```
+
+<Info>
+  If you're not sure, use `async def`. FastAPI will handle it correctly either way.
+</Info>
+
+### When to use async?
+
+- Use `async def` if your function performs async operations (database queries with async drivers, external API calls with async clients, etc.)
+- Use regular `def` if your function performs synchronous operations or you're not sure
+
+## Recap
+
+In this tutorial, you learned:
+
+<Steps>
+  <Step title="Creating a FastAPI instance">
+    Import `FastAPI` and create an `app` instance that serves as your application's main entry point.
+  </Step>
+  
+  <Step title="Path operation decorators">
+    Use decorators like `@app.get()`, `@app.post()`, etc., to define which HTTP method and path each function handles.
+  </Step>
+  
+  <Step title="Path parameters">
+    Declare path parameters in the decorator and as function arguments, with optional type annotations for automatic validation.
+  </Step>
+  
+  <Step title="Query parameters">
+    Function parameters that aren't path parameters become query parameters automatically.
+  </Step>
+  
+  <Step title="Running the app">
+    Use `fastapi dev` or `uvicorn` to run your application with automatic documentation.
+  </Step>
+</Steps>
+
+## Next steps
+
+Now that you understand the basics, explore more advanced topics:
+
+<CardGroup cols={2}>
+  <Card title="Request body" icon="file-code" href="/tutorial/body">
+    Handle POST requests with JSON bodies using Pydantic models
+  </Card>
+  <Card title="Path parameters" icon="route" href="/tutorial/path-params">
+    Advanced path parameter usage and validation
+  </Card>
+  <Card title="Query parameters" icon="filter" href="/tutorial/query-params">
+    Deep dive into query parameter validation
+  </Card>
+  <Card title="Dependencies" icon="plug" href="/tutorial/dependencies">
+    Learn FastAPI's powerful dependency injection system
+  </Card>
+</CardGroup>

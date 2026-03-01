@@ -1,0 +1,328 @@
+---
+title: Static Files
+description: Serve static files like images, CSS, and JavaScript with FastAPI using StaticFiles
+---
+
+You can serve static files (like images, CSS, JavaScript, etc.) automatically from a directory using `StaticFiles`.
+
+## Installing Dependencies
+
+`StaticFiles` requires `aiofiles` to be installed:
+
+```bash
+pip install aiofiles
+```
+
+<Note>
+If you installed FastAPI with `pip install fastapi[standard]`, aiofiles is already included.
+</Note>
+
+## Using StaticFiles
+
+Import `StaticFiles` and mount it to your application:
+
+```python
+from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+
+app = FastAPI()
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
+```
+
+### How It Works
+
+<Steps>
+
+<Step title="Create Directory">
+Create a directory for your static files (e.g., `static/`) in your project.
+</Step>
+
+<Step title="Mount StaticFiles">
+Mount `StaticFiles` at a specific path (e.g., `/static`).
+</Step>
+
+<Step title="Access Files">
+Files in the directory become accessible at the mounted path.
+</Step>
+
+</Steps>
+
+## Example Structure
+
+```
+project/
+├── main.py
+└── static/
+    ├── css/
+    │   └── styles.css
+    ├── js/
+    │   └── script.js
+    └── images/
+        └── logo.png
+```
+
+With this structure:
+
+- `static/css/styles.css` → `http://localhost:8000/static/css/styles.css`
+- `static/js/script.js` → `http://localhost:8000/static/js/script.js`
+- `static/images/logo.png` → `http://localhost:8000/static/images/logo.png`
+
+## Complete Example
+
+```python
+from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse
+
+app = FastAPI()
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+@app.get("/", response_class=HTMLResponse)
+async def read_root():
+    return """
+    <!DOCTYPE html>
+    <html>
+        <head>
+            <title>My App</title>
+            <link rel="stylesheet" href="/static/css/styles.css">
+        </head>
+        <body>
+            <h1>Welcome!</h1>
+            <img src="/static/images/logo.png" alt="Logo">
+            <script src="/static/js/script.js"></script>
+        </body>
+    </html>
+    """
+```
+
+## Mount Parameters
+
+The `mount()` method accepts:
+
+- **path**: The URL path where static files will be served (e.g., `/static`)
+- **app**: The `StaticFiles` instance
+- **name**: Internal name for the mount (used for URL generation)
+
+```python
+app.mount("/assets", StaticFiles(directory="public"), name="assets")
+```
+
+## StaticFiles Parameters
+
+<Steps>
+
+<Step title="directory">
+The directory path containing your static files. Can be absolute or relative.
+
+```python
+StaticFiles(directory="static")
+StaticFiles(directory="/var/www/static")
+```
+</Step>
+
+<Step title="html (optional)">
+Whether to serve `index.html` for directory requests. Default is `False`.
+
+```python
+StaticFiles(directory="static", html=True)
+```
+
+With `html=True`, requesting `/static/docs/` will serve `/static/docs/index.html` if it exists.
+</Step>
+
+<Step title="check_dir (optional)">
+Whether to check if the directory exists at startup. Default is `True`.
+
+```python
+StaticFiles(directory="static", check_dir=False)
+```
+</Step>
+
+</Steps>
+
+## Serving index.html
+
+When `html=True`, StaticFiles will serve `index.html` files for directory URLs:
+
+```python
+app.mount("/", StaticFiles(directory="static", html=True), name="static")
+```
+
+With this configuration:
+- `/` → serves `static/index.html`
+- `/about/` → serves `static/about/index.html`
+
+<Warning>
+When mounting at `/`, static files take precedence over API routes. Mount static files after defining your API routes, or use a different path like `/static`.
+</Warning>
+
+## Best Practices
+
+<Steps>
+
+<Step title="Mount Path">
+Use a dedicated path like `/static` or `/assets` to avoid conflicts with API routes:
+
+```python
+app.mount("/static", StaticFiles(directory="static"), name="static")
+```
+</Step>
+
+<Step title="Directory Organization">
+Organize static files by type:
+
+```
+static/
+├── css/
+├── js/
+├── images/
+└── fonts/
+```
+</Step>
+
+<Step title="Production Serving">
+In production, consider using a CDN or web server (like Nginx) to serve static files for better performance.
+</Step>
+
+</Steps>
+
+## URL Generation
+
+Use the `name` parameter to generate URLs to static files:
+
+```python
+from fastapi import FastAPI, Request
+from fastapi.staticfiles import StaticFiles
+
+app = FastAPI()
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+@app.get("/")
+async def read_root(request: Request):
+    url = request.url_for('static', path='/css/styles.css')
+    return {"url": str(url)}
+```
+
+## Multiple Static Directories
+
+You can mount multiple static file directories:
+
+```python
+app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/media", StaticFiles(directory="media"), name="media")
+app.mount("/downloads", StaticFiles(directory="downloads"), name="downloads")
+```
+
+## File Downloads
+
+Static files are served with appropriate content types. Browsers will display images, videos, etc., and download other file types based on the MIME type.
+
+To force download of a specific file, create a dedicated endpoint:
+
+```python
+from fastapi.responses import FileResponse
+
+@app.get("/download/{filename}")
+async def download_file(filename: str):
+    file_path = f"downloads/{filename}"
+    return FileResponse(
+        file_path,
+        media_type="application/octet-stream",
+        filename=filename
+    )
+```
+
+## Security Considerations
+
+<Warning>
+Be careful with static file directories:
+
+- Don't serve directories containing sensitive files
+- Don't use user input to construct file paths (path traversal attacks)
+- Keep static files separate from application code
+- Consider setting appropriate cache headers
+</Warning>
+
+## Cache Headers
+
+`StaticFiles` automatically sets cache headers. For custom cache control:
+
+```python
+from starlette.staticfiles import StaticFiles as StarletteStaticFiles
+
+class CustomStaticFiles(StarletteStaticFiles):
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "public, max-age=31536000"
+        return response
+
+app.mount("/static", CustomStaticFiles(directory="static"), name="static")
+```
+
+## Error Handling
+
+If a requested file doesn't exist, `StaticFiles` returns a 404 error automatically.
+
+<Info>
+You don't need to handle 404 errors for static files - it's handled automatically by StaticFiles.
+</Info>
+
+## Production Deployment
+
+For production, consider these alternatives:
+
+<Steps>
+
+<Step title="Web Server">
+Use Nginx or Apache to serve static files directly:
+
+```nginx
+location /static {
+    alias /path/to/static;
+    expires 1y;
+    add_header Cache-Control "public, immutable";
+}
+
+location / {
+    proxy_pass http://127.0.0.1:8000;
+}
+```
+</Step>
+
+<Step title="CDN">
+Upload static files to a CDN (CloudFront, CloudFlare, etc.) for global distribution and better performance.
+</Step>
+
+<Step title="Cloud Storage">
+Store static files in cloud storage (S3, Google Cloud Storage, etc.) and serve them directly from there.
+</Step>
+
+</Steps>
+
+<Tip>
+While FastAPI can serve static files during development, using a dedicated web server or CDN in production provides better performance, caching, and scalability.
+</Tip>
+
+## Common Issues
+
+### Directory Not Found
+
+If you see "Directory 'static' does not exist":
+
+```python
+import os
+
+# Use absolute path
+static_path = os.path.join(os.path.dirname(__file__), "static")
+app.mount("/static", StaticFiles(directory=static_path), name="static")
+```
+
+### 404 for Static Files
+
+Check:
+- File actually exists in the directory
+- Path is correct (case-sensitive on Linux/Mac)
+- Directory is mounted before starting the server
+- No conflicting routes

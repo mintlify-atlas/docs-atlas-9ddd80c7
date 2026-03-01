@@ -1,0 +1,285 @@
+---
+title: WebSockets
+description: Build real-time bidirectional communication with WebSocket endpoints in FastAPI
+---
+
+WebSockets provide full-duplex communication channels over a single TCP connection, enabling real-time bidirectional data exchange between clients and servers.
+
+## Basic WebSocket Endpoint
+
+Create a WebSocket endpoint using the `@app.websocket()` decorator:
+
+```python
+from fastapi import FastAPI, WebSocket
+
+app = FastAPI()
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    while True:
+        data = await websocket.receive_text()
+        await websocket.send_text(f"Message text was: {data}")
+```
+
+<Note>
+You must call `await websocket.accept()` before you can send or receive messages.
+</Note>
+
+## WebSocket Methods
+
+### Accepting Connections
+
+```python
+await websocket.accept()
+```
+
+Accepts the WebSocket connection. This must be called before any other WebSocket operations.
+
+### Receiving Data
+
+FastAPI provides several methods to receive data:
+
+```python
+# Receive text
+text = await websocket.receive_text()
+
+# Receive bytes
+bytes_data = await websocket.receive_bytes()
+
+# Receive JSON (automatically parsed)
+json_data = await websocket.receive_json()
+```
+
+### Sending Data
+
+Send data to the connected client:
+
+```python
+# Send text
+await websocket.send_text("Hello, client!")
+
+# Send bytes
+await websocket.send_bytes(b"Binary data")
+
+# Send JSON (automatically serialized)
+await websocket.send_json({"message": "Hello", "count": 42})
+```
+
+## Path Parameters and Query Parameters
+
+WebSocket endpoints support path and query parameters just like regular HTTP endpoints:
+
+```python
+from fastapi import FastAPI, WebSocket
+
+app = FastAPI()
+
+@app.websocket("/ws/{client_id}")
+async def websocket_endpoint(
+    websocket: WebSocket,
+    client_id: int,
+    token: str | None = None
+):
+    await websocket.accept()
+    await websocket.send_text(f"Client {client_id} connected")
+    if token:
+        await websocket.send_text(f"Token: {token}")
+```
+
+## Dependencies
+
+Use FastAPI's dependency injection system with WebSocket endpoints:
+
+```python
+from fastapi import (
+    Cookie,
+    Depends,
+    FastAPI,
+    Query,
+    WebSocket,
+    WebSocketException,
+    status,
+)
+
+app = FastAPI()
+
+async def get_cookie_or_token(
+    websocket: WebSocket,
+    session: str | None = Cookie(default=None),
+    token: str | None = Query(default=None),
+):
+    if session is None and token is None:
+        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
+    return session or token
+
+@app.websocket("/items/{item_id}/ws")
+async def websocket_endpoint(
+    websocket: WebSocket,
+    item_id: str,
+    cookie_or_token: str = Depends(get_cookie_or_token),
+):
+    await websocket.accept()
+    await websocket.send_text(f"Authenticated: {cookie_or_token}")
+    while True:
+        data = await websocket.receive_text()
+        await websocket.send_text(f"Item {item_id}: {data}")
+```
+
+<Warning>
+Use `WebSocketException` instead of `HTTPException` to raise errors in WebSocket dependencies. This allows you to specify WebSocket-specific close codes.
+</Warning>
+
+## Handling Disconnections
+
+Handle client disconnections gracefully using `WebSocketDisconnect`:
+
+```python
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+
+app = FastAPI()
+
+@app.websocket("/ws/{client_id}")
+async def websocket_endpoint(websocket: WebSocket, client_id: int):
+    await websocket.accept()
+    try:
+        while True:
+            data = await websocket.receive_text()
+            await websocket.send_text(f"You wrote: {data}")
+    except WebSocketDisconnect:
+        print(f"Client {client_id} disconnected")
+```
+
+## Connection Manager Pattern
+
+Manage multiple WebSocket connections with a connection manager class:
+
+```python
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: list[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        self.active_connections.remove(websocket)
+
+    async def send_personal_message(self, message: str, websocket: WebSocket):
+        await websocket.send_text(message)
+
+    async def broadcast(self, message: str):
+        for connection in self.active_connections:
+            await connection.send_text(message)
+
+manager = ConnectionManager()
+app = FastAPI()
+
+@app.websocket("/ws/{client_id}")
+async def websocket_endpoint(websocket: WebSocket, client_id: int):
+    await manager.connect(websocket)
+    try:
+        while True:
+            data = await websocket.receive_text()
+            await manager.send_personal_message(f"You wrote: {data}", websocket)
+            await manager.broadcast(f"Client #{client_id} says: {data}")
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+        await manager.broadcast(f"Client #{client_id} left the chat")
+```
+
+<Tip>
+The connection manager pattern is ideal for building chat applications, collaborative tools, or any scenario requiring broadcasting messages to multiple clients.
+</Tip>
+
+## WebSocket States
+
+Check the connection state using `websocket.client_state` or `websocket.application_state`:
+
+```python
+from fastapi import WebSocket
+from fastapi.websockets import WebSocketState
+
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    
+    if websocket.client_state == WebSocketState.CONNECTED:
+        await websocket.send_text("Connected!")
+```
+
+Available states:
+- `WebSocketState.CONNECTING`
+- `WebSocketState.CONNECTED`
+- `WebSocketState.DISCONNECTED`
+
+## Client-Side JavaScript
+
+Connect to your WebSocket endpoint from the browser:
+
+```javascript
+const ws = new WebSocket("ws://localhost:8000/ws");
+
+ws.onmessage = function(event) {
+    console.log("Message from server:", event.data);
+};
+
+ws.onopen = function(event) {
+    console.log("Connected to WebSocket");
+};
+
+ws.onclose = function(event) {
+    console.log("Disconnected from WebSocket");
+};
+
+ws.onerror = function(error) {
+    console.error("WebSocket error:", error);
+};
+
+// Send a message
+ws.send("Hello, server!");
+```
+
+## Testing WebSockets
+
+Test WebSocket endpoints using FastAPI's test client:
+
+```python
+from fastapi.testclient import TestClient
+
+with TestClient(app).websocket_connect("/ws") as websocket:
+    websocket.send_text("Hello")
+    data = websocket.receive_text()
+    assert data == "Message text was: Hello"
+```
+
+<Info>
+FastAPI's WebSocket support is built on top of Starlette's WebSocket implementation, providing a robust and well-tested foundation.
+</Info>
+
+## WebSocket Close Codes
+
+Use standard WebSocket close codes when raising exceptions:
+
+```python
+from fastapi import WebSocket, WebSocketException, status
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket, token: str | None = None):
+    if not token:
+        raise WebSocketException(
+            code=status.WS_1008_POLICY_VIOLATION,
+            reason="Missing authentication token"
+        )
+    await websocket.accept()
+```
+
+Common close codes:
+- `WS_1000_NORMAL_CLOSURE` - Normal closure
+- `WS_1001_GOING_AWAY` - Server going away
+- `WS_1002_PROTOCOL_ERROR` - Protocol error
+- `WS_1003_UNSUPPORTED_DATA` - Unsupported data
+- `WS_1008_POLICY_VIOLATION` - Policy violation
+- `WS_1011_INTERNAL_ERROR` - Internal server error

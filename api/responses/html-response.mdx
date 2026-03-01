@@ -1,0 +1,148 @@
+---
+title: HTMLResponse
+description: Response class for returning HTML content with text/html media type
+---
+
+`HTMLResponse` is a response class for returning HTML content. It sets the appropriate `text/html` content type header.
+
+## Import
+
+```python
+from fastapi.responses import HTMLResponse
+```
+
+## Class Signature
+
+```python
+class HTMLResponse(Response):
+    media_type = "text/html"
+```
+
+## Constructor Parameters
+
+<ParamField path="content" type="str | bytes" default="None">
+  The HTML content to return. Can be a string or bytes.
+</ParamField>
+
+<ParamField path="status_code" type="int" default="200">
+  The HTTP status code for the response.
+</ParamField>
+
+<ParamField path="headers" type="dict | None" default="None">
+  Additional HTTP headers to include in the response.
+</ParamField>
+
+<ParamField path="media_type" type="str | None" default="None">
+  Override the default media type. If not provided, uses `text/html; charset=utf-8`.
+</ParamField>
+
+<ParamField path="background" type="BackgroundTask | None" default="None">
+  Background task to run after returning the response.
+</ParamField>
+
+## Usage
+
+### Using response_class
+
+Specify `HTMLResponse` as the response class and return HTML as a string:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
+
+app = FastAPI()
+
+@app.get("/items/", response_class=HTMLResponse)
+async def read_items():
+    return """
+    <html>
+        <head>
+            <title>Some HTML in here</title>
+        </head>
+        <body>
+            <h1>Look ma! HTML!</h1>
+        </body>
+    </html>
+    """
+```
+
+### Direct HTMLResponse
+
+Return an `HTMLResponse` object directly:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
+
+app = FastAPI()
+
+@app.get("/items/")
+async def read_items():
+    html_content = """
+    <html>
+        <head>
+            <title>Some HTML in here</title>
+        </head>
+        <body>
+            <h1>Look ma! HTML!</h1>
+        </body>
+    </html>
+    """
+    return HTMLResponse(content=html_content, status_code=200)
+```
+
+### With Custom Headers
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
+
+app = FastAPI()
+
+@app.get("/")
+async def root():
+    return HTMLResponse(
+        content="<h1>Hello World</h1>",
+        headers={"X-Custom-Header": "value"}
+    )
+```
+
+### Default Response Class
+
+Set `HTMLResponse` as the default for all endpoints:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
+
+app = FastAPI(default_response_class=HTMLResponse)
+
+@app.get("/items/")
+async def read_items():
+    return "<h1>Items</h1><p>This is a list of items.</p>"
+```
+
+## Properties
+
+### media_type
+
+The media type for HTML responses:
+
+```python
+HTMLResponse.media_type  # "text/html"
+```
+
+The actual Content-Type header will be `text/html; charset=utf-8`.
+
+## Notes
+
+- HTML content should be valid HTML markup
+- The charset is automatically set to UTF-8
+- Use this response class when building server-rendered pages or HTML fragments
+- For modern applications, consider using templating engines like Jinja2 with FastAPI
+
+## Related
+
+- [JSONResponse](/api/responses/json-response) - For returning JSON data
+- [PlainTextResponse](/api/responses/plain-text-response) - For plain text content
+- [Templates](https://fastapi.tiangolo.com/advanced/templates/) - Using Jinja2 templates

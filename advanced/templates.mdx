@@ -1,0 +1,304 @@
+---
+title: "HTML Templates with Jinja2"
+description: "Learn how to render HTML templates using Jinja2 with FastAPI for building dynamic web pages"
+---
+
+## Overview
+
+FastAPI supports rendering HTML templates using Jinja2, a powerful and widely-used templating engine. This is useful when you need to return HTML pages instead of JSON responses, such as building admin interfaces, documentation pages, or server-side rendered applications.
+
+## Installation
+
+First, install Jinja2 and the additional dependencies for serving static files:
+
+```bash
+pip install jinja2
+```
+
+<Note>
+Jinja2 is the same template engine used by Flask, so if you're familiar with Flask templates, you'll feel right at home.
+</Note>
+
+## Basic Setup
+
+Here's a complete example showing how to set up Jinja2 templates with FastAPI:
+
+```python
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+
+app = FastAPI()
+
+# Mount static files directory
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# Configure templates directory
+templates = Jinja2Templates(directory="templates")
+
+
+@app.get("/items/{id}", response_class=HTMLResponse)
+async def read_item(request: Request, id: str):
+    return templates.TemplateResponse(
+        request=request, name="item.html", context={"id": id}
+    )
+```
+
+### Project Structure
+
+Your project should have the following structure:
+
+```
+.
+├── main.py
+├── templates/
+│   └── item.html
+└── static/
+    └── styles.css
+```
+
+## Creating Templates
+
+### Basic Template
+
+Create a file `templates/item.html`:
+
+```html
+<html>
+<head>
+    <title>Item Details</title>
+    <link href="{{ url_for('static', path='/styles.css') }}" rel="stylesheet">
+</head>
+<body>
+    <h1><a href="{{ url_for('read_item', id=id) }}">Item ID: {{ id }}</a></h1>
+</body>
+</html>
+```
+
+<Tip>
+Use `url_for()` to generate URLs for your routes and static files. This ensures your URLs remain correct even if you change your route paths.
+</Tip>
+
+## Template Context
+
+Pass data to your templates using the `context` parameter:
+
+```python
+@app.get("/users/{username}", response_class=HTMLResponse)
+async def read_user(request: Request, username: str):
+    user_data = {
+        "username": username,
+        "email": f"{username}@example.com",
+        "is_active": True
+    }
+    return templates.TemplateResponse(
+        request=request,
+        name="user.html",
+        context={
+            "request": request,
+            "user": user_data,
+            "page_title": f"Profile: {username}"
+        }
+    )
+```
+
+<Warning>
+Always include the `request` object in your context, even if you don't use it directly in the template. Some Jinja2 features require it.
+</Warning>
+
+## Advanced Template Features
+
+### Template Inheritance
+
+Create a base template `templates/base.html`:
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{% block title %}My Site{% endblock %}</title>
+    <link href="{{ url_for('static', path='/styles.css') }}" rel="stylesheet">
+</head>
+<body>
+    <nav>
+        <a href="/">Home</a>
+        <a href="/about">About</a>
+    </nav>
+    
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+    
+    <footer>
+        {% block footer %}
+        <p>&copy; 2026 My Site</p>
+        {% endblock %}
+    </footer>
+</body>
+</html>
+```
+
+Extend it in `templates/page.html`:
+
+```html
+{% extends "base.html" %}
+
+{% block title %}{{ page_title }}{% endblock %}
+
+{% block content %}
+<h1>{{ heading }}</h1>
+<p>{{ content }}</p>
+{% endblock %}
+```
+
+### Conditional Rendering
+
+```html
+{% if user.is_authenticated %}
+    <p>Welcome back, {{ user.name }}!</p>
+{% else %}
+    <p>Please <a href="/login">log in</a>.</p>
+{% endif %}
+```
+
+### Loops
+
+```html
+<ul>
+{% for item in items %}
+    <li>{{ item.name }} - ${{ item.price }}</li>
+{% endfor %}
+</ul>
+```
+
+<Info>
+Jinja2 supports many Python-like features including filters, macros, and includes. Check the [Jinja2 documentation](https://jinja.palletsprojects.com/) for the complete feature set.
+</Info>
+
+## Custom Filters
+
+Add custom Jinja2 filters to your templates:
+
+```python
+from fastapi.templating import Jinja2Templates
+from datetime import datetime
+
+templates = Jinja2Templates(directory="templates")
+
+# Add custom filter
+def format_datetime(value, format="%Y-%m-%d %H:%M"):
+    return value.strftime(format)
+
+templates.env.filters["datetime"] = format_datetime
+```
+
+Use it in your template:
+
+```html
+<p>Created: {{ item.created_at|datetime }}</p>
+<p>With custom format: {{ item.created_at|datetime("%B %d, %Y") }}</p>
+```
+
+## Serving Static Files
+
+Static files like CSS, JavaScript, and images should be served from a dedicated directory:
+
+```python
+from fastapi.staticfiles import StaticFiles
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
+```
+
+Reference them in templates:
+
+```html
+<link href="{{ url_for('static', path='/css/styles.css') }}" rel="stylesheet">
+<script src="{{ url_for('static', path='/js/app.js') }}"></script>
+<img src="{{ url_for('static', path='/images/logo.png') }}" alt="Logo">
+```
+
+## Error Pages
+
+Create custom error pages:
+
+```python
+from fastapi import Request, status
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import HTMLResponse
+
+@app.exception_handler(404)
+async def not_found_handler(request: Request, exc):
+    return templates.TemplateResponse(
+        request=request,
+        name="404.html",
+        context={"url": request.url},
+        status_code=status.HTTP_404_NOT_FOUND
+    )
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(request: Request, exc):
+    return templates.TemplateResponse(
+        request=request,
+        name="error.html",
+        context={"errors": exc.errors()},
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY
+    )
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+
+<Card title="Escape User Input" icon="shield-halved">
+Jinja2 auto-escapes HTML by default, but be careful when using `|safe` filter or `{% autoescape false %}`.
+</Card>
+
+<Card title="Organize Templates" icon="folder-tree">
+Use subdirectories for different sections: `templates/admin/`, `templates/public/`, etc.
+</Card>
+
+<Card title="Cache Templates" icon="bolt">
+In production, templates are automatically cached. Set `auto_reload=False` for better performance.
+</Card>
+
+<Card title="Separate Concerns" icon="layer-group">
+Keep business logic in Python and presentation logic in templates.
+</Card>
+
+</CardGroup>
+
+## Performance Considerations
+
+```python
+# Development: auto-reload templates
+templates = Jinja2Templates(directory="templates")
+
+# Production: disable auto-reload
+templates = Jinja2Templates(directory="templates", auto_reload=False)
+```
+
+<Warning>
+Disable `auto_reload` in production to avoid the performance overhead of checking for template changes on every request.
+</Warning>
+
+## Testing Templates
+
+Test your template endpoints using FastAPI's test client:
+
+```python
+from fastapi.testclient import TestClient
+
+def test_read_item():
+    client = TestClient(app)
+    response = client.get("/items/foo")
+    assert response.status_code == 200
+    assert "Item ID: foo" in response.text
+    assert "text/html" in response.headers["content-type"]
+```
+
+## Related Topics
+
+- Learn about [Static Files](/advanced/static-files) for serving CSS, JS, and images
+- Explore [Custom Responses](/advanced/custom-responses) for other response types
+- Check out [Server-Side Events](/advanced/server-sent-events) for real-time updates

@@ -1,0 +1,178 @@
+---
+title: 'Security'
+description: 'Declare security dependencies with OAuth2 scopes in FastAPI'
+---
+
+## Overview
+
+The `Security` class extends `Depends` to handle authentication and authorization with support for OAuth2 scopes. It allows you to declare security requirements for your endpoints and automatically validates scopes.
+
+## Signature
+
+```python
+from fastapi import Security
+
+@dataclass(frozen=True)
+class Security(Depends):
+    dependency: Callable[..., Any] | None = None
+    use_cache: bool = True
+    scope: Literal["function", "request"] | None = None
+    scopes: Sequence[str] | None = None
+```
+
+## Parameters
+
+<ParamField path="dependency" type="Callable[..., Any] | None" default="None">
+  The security scheme callable (e.g., `OAuth2PasswordBearer`, `HTTPBearer`, `APIKeyHeader`). This dependency should return security credentials that can be validated.
+</ParamField>
+
+<ParamField path="use_cache" type="bool" default="True">
+  Whether to cache the result of the security dependency within the same request. When `True`, authentication is performed once per request even if used in multiple dependencies.
+</ParamField>
+
+<ParamField path="scope" type="Literal['function', 'request'] | None" default="None">
+  The scope in which the security dependency operates. Inherited from `Depends`.
+</ParamField>
+
+<ParamField path="scopes" type="Sequence[str] | None" default="None">
+  A list of OAuth2 scopes required for this endpoint. These scopes will be validated against the scopes provided in the security credentials. If the required scopes are not present, FastAPI will return a 403 Forbidden response.
+</ParamField>
+
+## Usage
+
+### Basic Authentication
+
+```python
+from fastapi import FastAPI, Security
+from fastapi.security import HTTPBearer
+
+app = FastAPI()
+security = HTTPBearer()
+
+@app.get("/protected/")
+def read_protected(credentials = Security(security)):
+    return {"token": credentials.credentials}
+```
+
+### OAuth2 with Scopes
+
+```python
+from fastapi import FastAPI, Security, HTTPException
+from fastapi.security import OAuth2PasswordBearer, SecurityScopes
+
+app = FastAPI()
+oauth2_scheme = OAuth2PasswordBearer(
+    tokenUrl="token",
+    scopes={
+        "read:items": "Read items",
+        "write:items": "Write items",
+    },
+)
+
+def get_current_user(security_scopes: SecurityScopes, token: str = Security(oauth2_scheme)):
+    # Validate token and check scopes
+    # This is a simplified example
+    token_scopes = ["read:items"]  # Extract from token
+    
+    for scope in security_scopes.scopes:
+        if scope not in token_scopes:
+            raise HTTPException(
+                status_code=403,
+                detail="Not enough permissions",
+            )
+    return {"username": "johndoe", "scopes": token_scopes}
+
+@app.get("/items/")
+def read_items(
+    current_user = Security(get_current_user, scopes=["read:items"])
+):
+    return {"items": ["item1", "item2"], "user": current_user}
+
+@app.post("/items/")
+def create_item(
+    current_user = Security(get_current_user, scopes=["write:items"])
+):
+    return {"message": "Item created", "user": current_user}
+```
+
+### Multiple Scopes
+
+```python
+from fastapi import FastAPI, Security
+from fastapi.security import OAuth2PasswordBearer
+
+app = FastAPI()
+oauth2_scheme = OAuth2PasswordBearer(
+    tokenUrl="token",
+    scopes={
+        "users:read": "Read users",
+        "users:write": "Write users",
+        "admin": "Admin access",
+    },
+)
+
+def get_current_user(token: str = Security(oauth2_scheme)):
+    # Verify token and return user
+    return {"username": "johndoe"}
+
+@app.delete("/users/{user_id}")
+def delete_user(
+    user_id: int,
+    current_user = Security(get_current_user, scopes=["users:write", "admin"])
+):
+    # This endpoint requires both 'users:write' AND 'admin' scopes
+    return {"message": f"User {user_id} deleted"}
+```
+
+### API Key Security
+
+```python
+from fastapi import FastAPI, Security, HTTPException
+from fastapi.security import APIKeyHeader
+
+app = FastAPI()
+api_key_header = APIKeyHeader(name="X-API-Key")
+
+def verify_api_key(api_key: str = Security(api_key_header)):
+    if api_key != "secret-api-key":
+        raise HTTPException(status_code=403, detail="Invalid API Key")
+    return api_key
+
+@app.get("/secure-data/")
+def get_secure_data(api_key: str = Security(verify_api_key)):
+    return {"data": "sensitive information"}
+```
+
+## Available Security Schemes
+
+FastAPI provides several built-in security schemes that can be used with `Security`:
+
+- `OAuth2PasswordBearer` - OAuth2 with password flow
+- `OAuth2AuthorizationCodeBearer` - OAuth2 with authorization code flow
+- `HTTPBasic` - HTTP Basic authentication
+- `HTTPBearer` - HTTP Bearer token authentication
+- `HTTPDigest` - HTTP Digest authentication
+- `APIKeyQuery` - API key in query parameters
+- `APIKeyHeader` - API key in request headers
+- `APIKeyCookie` - API key in cookies
+- `OpenIdConnect` - OpenID Connect authentication
+
+## SecurityScopes
+
+The `SecurityScopes` class is automatically injected when you use scopes with `Security`. It provides access to the required scopes:
+
+```python
+from fastapi.security import SecurityScopes
+
+def get_current_user(security_scopes: SecurityScopes, token: str = Security(oauth2_scheme)):
+    # security_scopes.scopes contains the list of required scopes
+    # security_scopes.scope_str contains space-separated scopes string
+    print(f"Required scopes: {security_scopes.scopes}")
+    # Validate token and scopes...
+```
+
+## See Also
+
+- [Depends](/api/depends) - Base dependency injection class
+- [FastAPI Security Documentation](https://fastapi.tiangolo.com/tutorial/security/)
+- [OAuth2 Scopes](https://fastapi.tiangolo.com/advanced/security/oauth2-scopes/)

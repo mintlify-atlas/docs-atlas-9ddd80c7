@@ -1,0 +1,347 @@
+---
+title: "Response Headers"
+description: "Learn how to set custom headers in FastAPI responses for caching, security, and custom metadata"
+---
+
+## Overview
+
+HTTP headers provide metadata about responses. FastAPI makes it easy to set custom headers for caching, security, content negotiation, and application-specific metadata.
+
+## Setting Headers with Response Classes
+
+Return a response object with custom headers:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+
+app = FastAPI()
+
+@app.get("/headers/")
+def get_headers():
+    content = {"message": "Hello World"}
+    headers = {
+        "X-Cat-Dog": "alone in the world",
+        "Content-Language": "en-US"
+    }
+    return JSONResponse(content=content, headers=headers)
+```
+
+<Info>
+Custom headers typically start with `X-` by convention, though this is no longer strictly required by HTTP specifications.
+</Info>
+
+## Using Response Parameter
+
+Inject a `Response` parameter to set headers while returning data normally:
+
+```python
+from fastapi import FastAPI, Response
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class Item(BaseModel):
+    name: str
+    price: float
+
+@app.get("/items/", response_model=Item)
+def read_item(response: Response):
+    response.headers["X-Custom-Header"] = "Custom Value"
+    response.headers["X-Process-Time"] = "0.05"
+    return Item(name="Portal Gun", price=42.0)
+```
+
+<Tip>
+This approach lets you leverage FastAPI's automatic response serialization while still setting custom headers.
+</Tip>
+
+## Common Use Cases
+
+### Cache Control
+
+Set caching headers to control browser and proxy caching:
+
+```python
+from fastapi import FastAPI, Response
+
+app = FastAPI()
+
+@app.get("/cached-data/")
+def get_cached_data(response: Response):
+    response.headers["Cache-Control"] = "public, max-age=3600"
+    return {"data": "This can be cached for 1 hour"}
+
+@app.get("/no-cache-data/")
+def get_no_cache_data(response: Response):
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return {"data": "This should never be cached"}
+```
+
+### Security Headers
+
+Add security-related headers:
+
+```python
+from fastapi import FastAPI, Response
+
+app = FastAPI()
+
+@app.get("/secure-endpoint/")
+def secure_endpoint(response: Response):
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return {"message": "Secure response"}
+```
+
+<Warning>
+While setting security headers at the endpoint level works, it's usually better to set them globally using middleware for consistency.
+</Warning>
+
+### CORS Headers
+
+Set Cross-Origin Resource Sharing (CORS) headers:
+
+```python
+from fastapi import FastAPI, Response
+
+app = FastAPI()
+
+@app.get("/cors-endpoint/")
+def cors_endpoint(response: Response):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE"
+    response.headers["Access-Control-Allow-Headers"] = "*"
+    return {"message": "CORS enabled"}
+```
+
+<Note>
+For production applications, use FastAPI's built-in [CORS middleware](/tutorial/cors) instead of manually setting headers.
+</Note>
+
+### Content Type and Encoding
+
+Specify content type and character encoding:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import Response
+
+app = FastAPI()
+
+@app.get("/custom-content/")
+def custom_content():
+    content = "Custom content"
+    headers = {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Content-Encoding": "gzip"
+    }
+    return Response(
+        content=content,
+        headers=headers,
+        media_type="text/plain"
+    )
+```
+
+### Rate Limiting Headers
+
+Include rate limit information:
+
+```python
+from fastapi import FastAPI, Response
+
+app = FastAPI()
+
+@app.get("/api/data/")
+def get_data(response: Response):
+    # These would typically come from your rate limiting logic
+    response.headers["X-RateLimit-Limit"] = "100"
+    response.headers["X-RateLimit-Remaining"] = "95"
+    response.headers["X-RateLimit-Reset"] = "1640995200"
+    return {"data": "Some data"}
+```
+
+## Multiple Headers
+
+Set multiple headers at once:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+
+app = FastAPI()
+
+@app.get("/multi-headers/")
+def multi_headers():
+    content = {"message": "Multiple headers"}
+    headers = {
+        "X-Request-ID": "abc-123",
+        "X-API-Version": "1.0",
+        "X-Custom-Header": "custom-value",
+        "Cache-Control": "max-age=3600",
+    }
+    return JSONResponse(content=content, headers=headers)
+```
+
+## Dynamic Headers
+
+Generate headers dynamically based on request or business logic:
+
+```python
+from fastapi import FastAPI, Response
+import time
+import uuid
+
+app = FastAPI()
+
+@app.get("/dynamic-headers/")
+def dynamic_headers(response: Response):
+    # Generate unique request ID
+    request_id = str(uuid.uuid4())
+    response.headers["X-Request-ID"] = request_id
+    
+    # Add timestamp
+    response.headers["X-Response-Time"] = str(int(time.time()))
+    
+    # Add processing information
+    response.headers["X-Processed-By"] = "server-01"
+    
+    return {"message": "Response with dynamic headers"}
+```
+
+## Headers in Different Response Types
+
+### HTMLResponse with Headers
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
+
+app = FastAPI()
+
+@app.get("/html/")
+def get_html():
+    html_content = "<html><body><h1>Hello</h1></body></html>"
+    headers = {
+        "X-Custom-Header": "HTML Response",
+        "Cache-Control": "public, max-age=600"
+    }
+    return HTMLResponse(
+        content=html_content,
+        headers=headers
+    )
+```
+
+### FileResponse with Headers
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import FileResponse
+
+app = FastAPI()
+
+@app.get("/download/")
+def download_file():
+    headers = {
+        "X-Custom-Header": "File Download",
+        "Content-Disposition": "attachment; filename=document.pdf"
+    }
+    return FileResponse(
+        path="document.pdf",
+        headers=headers,
+        media_type="application/pdf"
+    )
+```
+
+### StreamingResponse with Headers
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
+
+app = FastAPI()
+
+@app.get("/stream/")
+def stream_data():
+    def generate():
+        for i in range(10):
+            yield f"data: {i}\n"
+    
+    headers = {
+        "X-Custom-Header": "Streaming Data",
+        "Cache-Control": "no-cache"
+    }
+    
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers=headers
+    )
+```
+
+## Modifying Existing Headers
+
+Update or remove headers:
+
+```python
+from fastapi import FastAPI, Response
+
+app = FastAPI()
+
+@app.get("/modify-headers/")
+def modify_headers(response: Response):
+    # Set initial header
+    response.headers["X-Custom"] = "initial"
+    
+    # Update header
+    response.headers["X-Custom"] = "updated"
+    
+    # Remove header
+    if "X-Unwanted" in response.headers:
+        del response.headers["X-Unwanted"]
+    
+    return {"message": "Headers modified"}
+```
+
+## Response Header Middleware
+
+For global headers, use middleware:
+
+```python
+from fastapi import FastAPI
+from starlette.middleware.base import BaseHTTPMiddleware
+
+app = FastAPI()
+
+class CustomHeaderMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        response.headers["X-API-Version"] = "1.0"
+        response.headers["X-Custom-Header"] = "Global Value"
+        return response
+
+app.add_middleware(CustomHeaderMiddleware)
+
+@app.get("/")
+def read_root():
+    return {"message": "All responses get custom headers"}
+```
+
+<Tip>
+Use middleware to add headers that should be present on all responses, such as security headers or API versioning information.
+</Tip>
+
+## Best Practices
+
+1. **Use standard headers**: Prefer standard HTTP headers over custom ones when possible
+2. **Consistent naming**: Use consistent naming conventions for custom headers (e.g., `X-` prefix)
+3. **Security headers**: Set security headers globally via middleware
+4. **Cache appropriately**: Use cache headers to optimize performance
+5. **Document custom headers**: Document any custom headers in your API documentation
+6. **Avoid sensitive data**: Don't expose sensitive information in headers
+7. **Use Response parameter**: Prefer the `Response` parameter injection for cleaner code
+8. **CORS via middleware**: Handle CORS with middleware, not manual headers

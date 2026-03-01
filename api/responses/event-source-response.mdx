@@ -1,0 +1,350 @@
+---
+title: EventSourceResponse
+description: Streaming response class for Server-Sent Events (SSE) with text/event-stream media type
+---
+
+`EventSourceResponse` is a specialized streaming response class for Server-Sent Events (SSE). It enables real-time, unidirectional communication from server to client over HTTP.
+
+## Import
+
+```python
+from fastapi.responses import EventSourceResponse
+from fastapi.sse import ServerSentEvent
+```
+
+## Class Signature
+
+```python
+class EventSourceResponse(StreamingResponse):
+    media_type = "text/event-stream"
+```
+
+## Usage
+
+### Basic SSE Stream
+
+Yield data objects that are automatically JSON-encoded:
+
+```python
+from collections.abc import AsyncIterable
+from fastapi import FastAPI
+from fastapi.responses import EventSourceResponse
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class Item(BaseModel):
+    name: str
+    description: str | None = None
+
+@app.get("/items/stream", response_class=EventSourceResponse)
+async def sse_items() -> AsyncIterable[Item]:
+    items = [
+        Item(name="Plumbus", description="A multi-purpose device."),
+        Item(name="Portal Gun", description="Opens portals."),
+    ]
+    for item in items:
+        yield item
+```
+
+### Using ServerSentEvent
+
+Full control over SSE event fields:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import EventSourceResponse
+from fastapi.sse import ServerSentEvent
+
+app = FastAPI()
+
+@app.get("/events", response_class=EventSourceResponse)
+async def stream_events():
+    yield ServerSentEvent(data="hello", event="greeting", id="1")
+    yield ServerSentEvent(data={"key": "value"}, event="json-data", id="2")
+    yield ServerSentEvent(comment="just a comment")
+    yield ServerSentEvent(data="retry-test", retry=5000)
+```
+
+### Synchronous Generator
+
+Use regular (non-async) generators:
+
+```python
+from collections.abc import Iterable
+from fastapi import FastAPI
+from fastapi.responses import EventSourceResponse
+
+app = FastAPI()
+
+@app.get("/stream-sync", response_class=EventSourceResponse)
+def sse_items_sync() -> Iterable[dict]:
+    for i in range(10):
+        yield {"count": i, "message": f"Event {i}"}
+```
+
+### Mixed Content Types
+
+Mix regular objects with ServerSentEvent:
+
+```python
+from collections.abc import AsyncIterable
+from fastapi import FastAPI
+from fastapi.responses import EventSourceResponse
+from fastapi.sse import ServerSentEvent
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class Item(BaseModel):
+    name: str
+
+@app.get("/mixed", response_class=EventSourceResponse)
+async def sse_mixed() -> AsyncIterable[Item]:
+    yield Item(name="First")
+    yield ServerSentEvent(data="custom-event", event="special")
+    yield Item(name="Second")
+```
+
+### Raw Data (No JSON Encoding)
+
+Send pre-formatted text without JSON encoding:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import EventSourceResponse
+from fastapi.sse import ServerSentEvent
+
+app = FastAPI()
+
+@app.get("/raw", response_class=EventSourceResponse)
+async def sse_raw():
+    yield ServerSentEvent(raw_data="plain text without quotes")
+    yield ServerSentEvent(raw_data="<div>html fragment</div>", event="html")
+    yield ServerSentEvent(raw_data="cpu,87.3,1709145600", event="csv")
+```
+
+### POST Method Support
+
+SSE works with any HTTP method, including POST:
+
+```python
+from collections.abc import AsyncIterable
+from fastapi import FastAPI
+from fastapi.responses import EventSourceResponse
+
+app = FastAPI()
+
+@app.post("/stream-post", response_class=EventSourceResponse)
+async def sse_post(query: str) -> AsyncIterable[dict]:
+    # Process query and stream results
+    for i in range(5):
+        yield {"result": f"{query} - {i}"}
+```
+
+## ServerSentEvent Fields
+
+<ParamField path="data" type="Any" default="None">
+  The event payload. Can be any JSON-serializable value (dict, list, string, number, Pydantic model, etc.). Always JSON-encoded, including strings.
+  
+  Mutually exclusive with `raw_data`.
+</ParamField>
+
+<ParamField path="raw_data" type="str | None" default="None">
+  Raw string to send as the `data:` field without JSON encoding. Use for pre-formatted text, HTML, CSV, or non-JSON payloads.
+  
+  Mutually exclusive with `data`.
+</ParamField>
+
+<ParamField path="event" type="str | None" default="None">
+  Optional event type name. Maps to `addEventListener(event, ...)` on the client. When omitted, the browser dispatches on the generic `message` event.
+</ParamField>
+
+<ParamField path="id" type="str | None" default="None">
+  Optional event ID. The browser sends this value back as the `Last-Event-ID` header on automatic reconnection. Must not contain null (`\0`) characters.
+</ParamField>
+
+<ParamField path="retry" type="int | None" default="None">
+  Optional reconnection time in milliseconds. Tells the browser how long to wait before reconnecting after the connection is lost. Must be a non-negative integer.
+</ParamField>
+
+<ParamField path="comment" type="str | None" default="None">
+  Optional comment line(s). Comments start with `:` in the SSE wire format and are ignored by EventSource clients. Useful for keep-alive pings.
+</ParamField>
+
+## Client-Side JavaScript
+
+### Basic EventSource
+
+```javascript
+const eventSource = new EventSource('/items/stream');
+
+eventSource.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  console.log('Received:', data);
+};
+
+eventSource.onerror = (error) => {
+  console.error('SSE error:', error);
+  eventSource.close();
+};
+```
+
+### Named Events
+
+```javascript
+const eventSource = new EventSource('/events');
+
+// Listen for specific event types
+eventSource.addEventListener('greeting', (event) => {
+  console.log('Greeting:', event.data);
+});
+
+eventSource.addEventListener('json-data', (event) => {
+  const data = JSON.parse(event.data);
+  console.log('JSON data:', data);
+});
+
+// Default handler for unnamed events
+eventSource.onmessage = (event) => {
+  console.log('Message:', event.data);
+};
+```
+
+### With Reconnection
+
+```javascript
+const eventSource = new EventSource('/stream');
+
+eventSource.onopen = () => {
+  console.log('Connection opened');
+};
+
+eventSource.onerror = (error) => {
+  console.log('Connection error, will retry...');
+  // Browser automatically reconnects
+};
+```
+
+## SSE Wire Format
+
+Events are formatted as text with specific field prefixes:
+
+```
+data: {"message": "hello"}
+
+```
+
+With multiple fields:
+
+```
+event: greeting
+data: {"message": "hello"}
+id: 1
+retry: 5000
+
+```
+
+Multi-line data:
+
+```
+data: line 1
+data: line 2
+data: line 3
+
+```
+
+Comments (for keep-alive):
+
+```
+: ping
+
+```
+
+## Automatic Keep-Alive
+
+FastAPI automatically sends keep-alive comments every 15 seconds when the generator is idle, preventing proxy/load-balancer timeouts:
+
+```
+: ping
+
+```
+
+This happens automatically - you don't need to implement it.
+
+## Properties
+
+### media_type
+
+```python
+EventSourceResponse.media_type  # "text/event-stream"
+```
+
+## Notes
+
+- SSE is unidirectional (server to client only)
+- Browsers automatically reconnect on connection loss
+- Compatible with all HTTP methods (GET, POST, etc.)
+- The `EventSource` API is built into modern browsers
+- Maximum concurrent SSE connections per domain is typically 6
+- Use WebSockets for bidirectional communication
+- All `data` values are JSON-serialized, including plain strings
+- Use `raw_data` for non-JSON content
+
+## Data vs Raw Data
+
+### data (JSON-encoded)
+
+```python
+ServerSentEvent(data="hello")  # Wire: data: "hello"
+ServerSentEvent(data={"key": "value"})  # Wire: data: {"key":"value"}
+```
+
+### raw_data (No encoding)
+
+```python
+ServerSentEvent(raw_data="hello")  # Wire: data: hello
+ServerSentEvent(raw_data="<div>HTML</div>")  # Wire: data: <div>HTML</div>
+```
+
+## Error Handling
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import EventSourceResponse
+from fastapi.sse import ServerSentEvent
+
+app = FastAPI()
+
+@app.get("/stream", response_class=EventSourceResponse)
+async def stream_with_errors():
+    try:
+        for i in range(10):
+            if i == 5:
+                yield ServerSentEvent(
+                    data={"error": "Something went wrong"},
+                    event="error"
+                )
+                return
+            yield {"count": i}
+    except Exception as e:
+        yield ServerSentEvent(
+            data={"error": str(e)},
+            event="error"
+        )
+```
+
+## Best Practices
+
+1. **Use event types**: Name your events for easier client-side handling
+2. **Include IDs**: Event IDs enable automatic reconnection from the last received event
+3. **Set retry intervals**: Control how quickly clients reconnect after disconnection
+4. **Handle errors gracefully**: Send error events before closing the stream
+5. **Consider scaling**: SSE connections are long-lived; plan for horizontal scaling
+6. **Monitor connections**: Track active SSE connections for capacity planning
+
+## Related
+
+- [StreamingResponse](/api/responses/streaming-response) - Generic streaming
+- [WebSockets](https://fastapi.tiangolo.com/advanced/websockets/) - Bidirectional communication
+- [ServerSentEvent](https://html.spec.whatwg.org/multipage/server-sent-events.html) - SSE specification

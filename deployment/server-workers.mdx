@@ -1,0 +1,572 @@
+---
+title: Server Workers - Uvicorn with Gunicorn
+description: Configure multiple worker processes for FastAPI using Uvicorn and Gunicorn for production deployments.
+---
+
+When deploying FastAPI applications, you'll often want to run **multiple worker processes** to take advantage of multiple CPU cores and handle more concurrent requests.
+
+## Why Multiple Workers?
+
+Running multiple processes provides several benefits:
+
+- **Utilize multiple CPU cores** - Each worker can run on a different core
+- **Handle more requests** - Distribute load across workers
+- **Improve fault tolerance** - If one worker crashes, others continue serving requests
+- **Increase throughput** - Process multiple requests in parallel
+
+<Info>
+  During development, you typically run a single process. In production, you'll want multiple workers for better performance.
+</Info>
+
+## Process and Replication
+
+From the deployment concepts, multiple workers address:
+
+- ✅ **Replication** - Running multiple processes
+- ✅ **Restarts** - Process managers can restart dead workers
+- ⚠️ **Security (HTTPS)** - Still needs external handling
+- ⚠️ **Running on Startup** - Needs system configuration
+- ⚠️ **Memory** - Each worker consumes memory
+
+## Using Uvicorn with Workers
+
+Uvicorn can manage multiple worker processes directly.
+
+### With FastAPI CLI
+
+```bash
+fastapi run --workers 4 main.py
+```
+
+Output:
+```
+ INFO:     Uvicorn running on http://0.0.0.0:8000
+ INFO:     Started parent process [27365]
+ INFO:     Started server process [27368]
+ INFO:     Started server process [27369]
+ INFO:     Started server process [27370]
+ INFO:     Started server process [27371]
+ INFO:     Waiting for application startup.
+ INFO:     Application startup complete.
+```
+
+### With Uvicorn Directly
+
+```bash
+uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4
+```
+
+<Steps>
+  <Step title="Parent Process">
+    One parent process (PID 27365) acts as the **process manager**.
+  </Step>
+  
+  <Step title="Worker Processes">
+    Four worker processes (PIDs 27368-27371) handle actual requests.
+  </Step>
+  
+  <Step title="Load Balancing">
+    The parent distributes incoming requests among workers.
+  </Step>
+  
+  <Step title="Health Monitoring">
+    The parent monitors workers and restarts them if they crash.
+  </Step>
+</Steps>
+
+## Determining Worker Count
+
+The optimal number of workers depends on your application and hardware.
+
+### General Formula
+
+```python
+workers = (2 * CPU_cores) + 1
+```
+
+For example:
+- **2 cores**: 5 workers
+- **4 cores**: 9 workers
+- **8 cores**: 17 workers
+
+### Check CPU Cores
+
+```bash
+# Linux/macOS
+nproc
+
+# Or
+python -c "import os; print(os.cpu_count())"
+```
+
+### Application-Specific Considerations
+
+**I/O-Bound Applications** (database queries, API calls):
+- Fewer workers needed
+- FastAPI's async capabilities handle many concurrent requests per worker
+- Start with `workers = CPU_cores`
+
+**CPU-Bound Applications** (data processing, image manipulation):
+- More workers beneficial
+- Use the formula: `(2 * CPU_cores) + 1`
+
+<Tip>
+  Start conservatively and monitor CPU/memory usage. Adjust worker count based on actual performance metrics.
+</Tip>
+
+## Using Gunicorn with Uvicorn Workers
+
+Gunicorn is a mature process manager that can use Uvicorn workers.
+
+### Installation
+
+```bash
+pip install "uvicorn[standard]" gunicorn
+```
+
+### Basic Usage
+
+```bash
+gunicorn main:app --workers 4 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
+```
+
+### With Configuration File
+
+Create **gunicorn_conf.py**:
+
+```python
+import multiprocessing
+
+# Server socket
+bind = "0.0.0.0:8000"
+
+# Worker processes
+workers = multiprocessing.cpu_count() * 2 + 1
+worker_class = "uvicorn.workers.UvicornWorker"
+
+# Logging
+accesslog = "-"
+errorlog = "-"
+loglevel = "info"
+
+# Worker timeout
+timeout = 120
+
+# Graceful timeout
+graceful_timeout = 120
+
+# Keep alive
+keepalive = 5
+```
+
+Run with:
+```bash
+gunicorn main:app -c gunicorn_conf.py
+```
+
+<Note>
+  Gunicorn provides more advanced process management features than Uvicorn's built-in worker support.
+</Note>
+
+## Advanced Gunicorn Configuration
+
+### Auto-Restart on Code Changes
+
+For development (not production):
+
+```python
+# gunicorn_conf.py
+reload = True
+reload_extra_files = ["./config.yaml", "./templates/"]
+```
+
+### Worker Lifecycle Hooks
+
+```python
+# gunicorn_conf.py
+def on_starting(server):
+    print("Gunicorn master starting")
+
+def when_ready(server):
+    print("Gunicorn is ready to serve requests")
+
+def pre_fork(server, worker):
+    print(f"Worker {worker.pid} is being forked")
+
+def post_fork(server, worker):
+    print(f"Worker {worker.pid} has been forked")
+
+def pre_exec(server):
+    print("Forked child, re-executing")
+
+def on_exit(server):
+    print("Gunicorn master exiting")
+```
+
+### Custom Worker Management
+
+```python
+# gunicorn_conf.py
+# Maximum requests a worker will process before restarting
+max_requests = 1000
+max_requests_jitter = 50  # Randomize restart to avoid all workers restarting simultaneously
+
+# Worker restart on memory threshold
+worker_tmp_dir = "/dev/shm"  # Use memory filesystem for better performance
+```
+
+<Warning>
+  `max_requests` is useful for preventing memory leaks but can impact performance. Use it cautiously.
+</Warning>
+
+## Process Managers for Production
+
+For production deployments, use a system-level process manager.
+
+### Systemd (Linux)
+
+Create **/etc/systemd/system/fastapi.service**:
+
+```ini
+[Unit]
+Description=FastAPI Application
+After=network.target
+
+[Service]
+Type=notify
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/myapp
+Environment="PATH=/var/www/myapp/venv/bin"
+ExecStart=/var/www/myapp/venv/bin/gunicorn main:app \
+    --workers 4 \
+    --worker-class uvicorn.workers.UvicornWorker \
+    --bind 0.0.0.0:8000
+ExecReload=/bin/kill -s HUP $MAINPID
+KillMode=mixed
+TimeoutStopSec=5
+PrivateTmp=true
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Manage the service:
+```bash
+# Enable on startup
+sudo systemctl enable fastapi
+
+# Start service
+sudo systemctl start fastapi
+
+# Check status
+sudo systemctl status fastapi
+
+# View logs
+sudo journalctl -u fastapi -f
+
+# Restart service
+sudo systemctl restart fastapi
+```
+
+### Supervisor
+
+Create **/etc/supervisor/conf.d/fastapi.conf**:
+
+```ini
+[program:fastapi]
+command=/var/www/myapp/venv/bin/gunicorn main:app --workers 4 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
+directory=/var/www/myapp
+user=www-data
+autostart=true
+autorestart=true
+redirect_stderr=true
+stdout_logfile=/var/log/fastapi/access.log
+stderr_logfile=/var/log/fastapi/error.log
+```
+
+Manage with:
+```bash
+# Reload configuration
+sudo supervisorctl reread
+sudo supervisorctl update
+
+# Control service
+sudo supervisorctl start fastapi
+sudo supervisorctl stop fastapi
+sudo supervisorctl restart fastapi
+sudo supervisorctl status fastapi
+```
+
+<Tip>
+  Systemd is built into most modern Linux distributions. Supervisor is useful when you need more flexibility or are on older systems.
+</Tip>
+
+## Container Environments
+
+### Docker Compose
+
+For Docker Compose, use workers in the container:
+
+```yaml
+services:
+  web:
+    build: .
+    command: gunicorn main:app --workers 4 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:80
+    ports:
+      - "80:80"
+```
+
+### Kubernetes
+
+For Kubernetes, **don't use workers**. Instead, run one process per container and let Kubernetes replicate:
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fastapi-app
+spec:
+  replicas: 4  # Kubernetes handles replication
+  template:
+    spec:
+      containers:
+      - name: fastapi
+        image: myapp:latest
+        command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "80"]
+        # No --workers flag!
+```
+
+<Warning>
+  In Kubernetes, use **one Uvicorn process per pod** (no `--workers`). Let Kubernetes handle replication with multiple pods.
+</Warning>
+
+## Memory Considerations
+
+Each worker process consumes memory independently.
+
+### Example Memory Usage
+
+If your application uses 500MB per process:
+- **1 worker**: 500MB
+- **4 workers**: 2GB
+- **8 workers**: 4GB
+
+Ensure your server has enough RAM:
+```bash
+# Check available memory
+free -h
+
+# Monitor per-process memory
+htop
+# Or
+top
+```
+
+### Large Memory Objects
+
+If loading large objects (ML models, cached data):
+
+```python
+from functools import lru_cache
+
+@lru_cache(maxsize=1)
+def get_model():
+    # Loaded once per worker process
+    import joblib
+    return joblib.load("model.pkl")
+
+@app.get("/predict")
+def predict(data: str):
+    model = get_model()
+    return {"prediction": model.predict([data])}
+```
+
+Each worker loads its own copy:
+- **Model size**: 1GB
+- **4 workers**: 4GB total memory for models
+
+<Info>
+  Consider using fewer workers or shared memory solutions when dealing with large in-memory objects.
+</Info>
+
+## Load Balancing
+
+When running multiple workers, the process manager handles load balancing automatically.
+
+### Uvicorn Workers
+
+Uvicorn's parent process distributes requests using the OS scheduler.
+
+### Gunicorn Workers
+
+Gunicorn uses a pre-fork model:
+1. Master process accepts connections
+2. Connections distributed to workers
+3. Workers process requests independently
+
+### External Load Balancers
+
+For multiple servers, use external load balancers:
+
+- **Nginx** - HTTP load balancer
+- **HAProxy** - TCP/HTTP load balancer
+- **Traefik** - Modern reverse proxy with automatic service discovery
+- **Cloud Load Balancers** - AWS ALB, GCP Load Balancer, Azure Load Balancer
+
+## Monitoring Workers
+
+### Using ps
+
+```bash
+# List worker processes
+ps aux | grep uvicorn
+```
+
+### Using htop
+
+```bash
+htop
+# Press F4 and type "uvicorn" to filter
+```
+
+### Programmatic Monitoring
+
+```python
+import psutil
+import os
+
+def get_worker_stats():
+    process = psutil.Process(os.getpid())
+    return {
+        "pid": process.pid,
+        "cpu_percent": process.cpu_percent(interval=1),
+        "memory_mb": process.memory_info().rss / 1024 / 1024,
+        "threads": process.num_threads(),
+    }
+
+@app.get("/worker-stats")
+def worker_stats():
+    return get_worker_stats()
+```
+
+## Graceful Shutdown
+
+Ensure workers shutdown gracefully to finish processing requests.
+
+### Gunicorn Configuration
+
+```python
+# gunicorn_conf.py
+graceful_timeout = 30  # Wait 30 seconds for workers to finish
+timeout = 120  # Kill workers after 120 seconds
+```
+
+### FastAPI Lifespan Events
+
+```python
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+
+ml_models = {}
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    ml_models["model"] = load_model()
+    print("Model loaded")
+    
+    yield
+    
+    # Shutdown
+    ml_models.clear()
+    print("Model unloaded")
+
+app = FastAPI(lifespan=lifespan)
+```
+
+<Tip>
+  Use lifespan events for cleanup tasks like closing database connections or saving state.
+</Tip>
+
+## Performance Tuning
+
+### Worker Timeout
+
+Increase timeout for long-running requests:
+
+```bash
+gunicorn main:app --timeout 300 --workers 4 --worker-class uvicorn.workers.UvicornWorker
+```
+
+### Keep-Alive Connections
+
+```bash
+gunicorn main:app --keep-alive 5 --workers 4 --worker-class uvicorn.workers.UvicornWorker
+```
+
+### Worker Connections
+
+For Uvicorn workers, control max connections:
+
+```bash
+uvicorn main:app --workers 4 --limit-concurrency 1000
+```
+
+## Troubleshooting
+
+### Workers Dying Unexpectedly
+
+Check logs for:
+- **Memory issues**: Out of memory (OOM) killer
+- **Timeouts**: Requests taking too long
+- **Exceptions**: Unhandled errors crashing workers
+
+```bash
+# Check system logs
+sudo dmesg | grep -i kill
+
+# Check application logs
+sudo journalctl -u fastapi -n 100
+```
+
+### High CPU Usage
+
+- Too many workers for available cores
+- CPU-intensive operations blocking workers
+- Consider reducing worker count or optimizing code
+
+### Memory Leaks
+
+Use `max_requests` to periodically restart workers:
+
+```python
+# gunicorn_conf.py
+max_requests = 1000
+max_requests_jitter = 100
+```
+
+<Warning>
+  If workers frequently die, investigate the root cause rather than just increasing `max_requests`.
+</Warning>
+
+## Recap
+
+Multiple workers improve FastAPI performance by:
+
+- ✅ **Utilizing multiple CPU cores** for better throughput
+- ✅ **Handling more concurrent requests** across workers
+- ✅ **Providing fault tolerance** if a worker crashes
+- ✅ **Automatic restarts** with process managers
+
+Key decisions:
+
+- **Single server**: Use `--workers` with Uvicorn or Gunicorn
+- **Containers (Kubernetes)**: One process per container, let orchestrator replicate
+- **Worker count**: Start with `(2 * CPU_cores) + 1`, adjust based on monitoring
+- **Memory**: Ensure enough RAM for all workers plus overhead
+
+<Tip>
+  Monitor your application's CPU and memory usage to find the optimal worker count for your specific workload.
+</Tip>

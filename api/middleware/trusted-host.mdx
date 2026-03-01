@@ -1,0 +1,148 @@
+---
+title: TrustedHostMiddleware
+description: Enforce allowed Host headers to prevent Host header attacks in FastAPI
+---
+
+# TrustedHostMiddleware
+
+The `TrustedHostMiddleware` enforces that all incoming requests have a correctly set `Host` header to protect against Host header attacks. Any request with a non-matching Host header will result in a 400 Bad Request response.
+
+## Usage
+
+```python
+from fastapi import FastAPI
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+
+app = FastAPI()
+
+app.add_middleware(
+    TrustedHostMiddleware,
+    allowed_hosts=["example.com", "*.example.com"],
+)
+```
+
+## Parameters
+
+<ParamField path="allowed_hosts" type="list[str]" required>
+  A list of allowed hostnames. Wildcard domains are supported using `*` prefix. For example:
+  
+  - `"example.com"` - Exact match only
+  - `"*.example.com"` - Matches any subdomain of example.com
+  - `"*"` - Allows any hostname (not recommended for production)
+</ParamField>
+
+<ParamField path="www_redirect" type="bool" default="True">
+  If `True`, requests to non-www versions of allowed hosts will be redirected to their www equivalent. For example, `example.com` redirects to `www.example.com`.
+</ParamField>
+
+## How It Works
+
+The middleware:
+
+1. Extracts the `Host` header from incoming requests
+2. Checks if the host matches any entry in `allowed_hosts`
+3. Returns a 400 Bad Request response if the host is not allowed
+4. Optionally redirects to www version if `www_redirect=True`
+
+## Examples
+
+### Basic Configuration
+
+```python
+from fastapi import FastAPI
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+
+app = FastAPI()
+
+app.add_middleware(
+    TrustedHostMiddleware,
+    allowed_hosts=["example.com", "www.example.com"],
+)
+```
+
+### Wildcard Subdomains
+
+```python
+from fastapi import FastAPI
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+
+app = FastAPI()
+
+app.add_middleware(
+    TrustedHostMiddleware,
+    allowed_hosts=[
+        "example.com",
+        "*.example.com",  # Allows api.example.com, app.example.com, etc.
+    ],
+)
+```
+
+### Development and Production
+
+```python
+import os
+from fastapi import FastAPI
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+
+app = FastAPI()
+
+if os.getenv("ENVIRONMENT") == "production":
+    allowed_hosts = ["example.com", "*.example.com"]
+else:
+    # Allow localhost and local IPs for development
+    allowed_hosts = ["localhost", "127.0.0.1", "*.local"]
+
+app.add_middleware(
+    TrustedHostMiddleware,
+    allowed_hosts=allowed_hosts,
+)
+```
+
+### Multiple Domains
+
+```python
+from fastapi import FastAPI
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+
+app = FastAPI()
+
+app.add_middleware(
+    TrustedHostMiddleware,
+    allowed_hosts=[
+        "example.com",
+        "*.example.com",
+        "example.org",
+        "*.example.org",
+        "api.service.com",
+    ],
+)
+```
+
+## Security Considerations
+
+- **Always use in production**: Host header attacks can lead to password reset poisoning, cache poisoning, and other vulnerabilities
+- **Avoid wildcards**: Use specific hostnames when possible; avoid `["*"]` in production
+- **Include all valid hosts**: Ensure all legitimate access points are included (www, api, subdomains)
+- **Load balancers**: If behind a proxy, ensure the proxy forwards the original Host header
+
+## Common Issues
+
+### Local Development
+
+When developing locally, include common local hostnames:
+
+```python
+allowed_hosts = ["localhost", "127.0.0.1", "0.0.0.0"]
+```
+
+### Docker/Kubernetes
+
+When running in containers, you may need to include internal hostnames or IP ranges.
+
+### Port Numbers
+
+Host headers include port numbers for non-standard ports. Include them in your allowed hosts:
+
+```python
+allowed_hosts = ["localhost:8000", "127.0.0.1:8000"]
+```

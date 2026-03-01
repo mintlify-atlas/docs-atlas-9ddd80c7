@@ -1,0 +1,528 @@
+---
+title: Dependency Overrides
+description: Learn how to override dependencies in FastAPI for testing, using app.dependency_overrides to replace production dependencies with test doubles.
+---
+
+Dependency overrides allow you to replace dependencies during testing without modifying your application code. This is essential for isolating tests and mocking external services.
+
+## The Problem: Testing with Real Dependencies
+
+Consider an application that depends on a database:
+
+```python
+from fastapi import Depends, FastAPI
+
+app = FastAPI()
+
+def get_database():
+    db = ProductionDatabase("postgresql://prod-server/db")
+    try:
+        yield db
+    finally:
+        db.close()
+
+@app.get("/users")
+def read_users(db = Depends(get_database)):
+    return db.query("SELECT * FROM users")
+```
+
+Testing this endpoint would connect to the real production database, which is:
+- **Slow**: Real database connections take time
+- **Fragile**: Tests fail if the database is unavailable
+- **Dangerous**: Tests might modify production data
+
+## Solution: Dependency Overrides
+
+Use `app.dependency_overrides` to replace dependencies during testing:
+
+```python
+from fastapi.testclient import TestClient
+
+# Test dependency
+def get_test_database():
+    return FakeDatabase([{"id": 1, "name": "Test User"}])
+
+def test_read_users():
+    # Override the dependency
+    app.dependency_overrides[get_database] = get_test_database
+
+    client = TestClient(app)
+    response = client.get("/users")
+
+    assert response.status_code == 200
+    assert response.json() == [{"id": 1, "name": "Test User"}]
+
+    # Clean up
+    app.dependency_overrides = {}
+```
+
+<Note>
+The override maps the **original dependency function** to the **replacement function**. FastAPI will call the replacement whenever the original is used.
+</Note>
+
+## How It Works
+
+FastAPI's dependency resolution system checks `app.dependency_overrides` before calling any dependency. The implementation is in `fastapi/dependencies/utils.py:629-644`:
+
+1. Dependency resolution begins
+2. For each dependency, check if an override exists
+3. If yes, use the override; if no, use the original
+4. Cache and resolve the dependency normally
+
+<Info>
+Overrides work for dependencies used anywhere: path operation parameters, nested dependencies, and decorator-level dependencies.
+</Info>
+
+## Basic Usage Patterns
+
+### Overriding a Simple Dependency
+
+```python
+from fastapi import Depends, FastAPI
+from fastapi.testclient import TestClient
+
+app = FastAPI()
+
+def get_api_key():
+    # In production: read from secure storage
+    return get_secret("API_KEY")
+
+@app.get("/data")
+def get_data(api_key: str = Depends(get_api_key)):
+    return {"api_key": api_key}
+
+# Test
+def test_get_data():
+    def override_api_key():
+        return "test-key-123"
+
+    app.dependency_overrides[get_api_key] = override_api_key
+
+    client = TestClient(app)
+    response = client.get("/data")
+
+    assert response.json() == {"api_key": "test-key-123"}
+
+    app.dependency_overrides.clear()
+```
+
+### Overriding with Different Parameters
+
+The override dependency can have completely different parameters:
+
+```python
+def get_current_user(token: str = Header(...)):
+    # Validate token, query database, etc.
+    return validate_token_and_get_user(token)
+
+@app.get("/profile")
+def read_profile(user = Depends(get_current_user)):
+    return user
+
+# Test with no parameters
+def test_read_profile():
+    def override_user():
+        # No token parameter needed
+        return {"id": 1, "name": "Test User"}
+
+    app.dependency_overrides[get_current_user] = override_user
+
+    client = TestClient(app)
+    # No authentication header required
+    response = client.get("/profile")
+
+    assert response.json() == {"id": 1, "name": "Test User"}
+
+    app.dependency_overrides.clear()
+```
+
+<Tip>
+This is powerful for authentication testing. Override authentication dependencies to bypass login during tests.
+</Tip>
+
+## Advanced Override Patterns
+
+### Overriding Generator Dependencies
+
+Generator dependencies with `yield` can be overridden:
+
+```python
+def get_db():
+    db = Database()
+    try:
+        yield db
+    finally:
+        db.close()
+
+@app.post("/users")
+def create_user(name: str, db = Depends(get_db)):
+    return db.insert_user(name)
+
+# Test override
+def test_create_user():
+    class FakeDB:
+        def __init__(self):
+            self.users = []
+
+        def insert_user(self, name):
+            user = {"id": len(self.users) + 1, "name": name}
+            self.users.append(user)
+            return user
+
+    fake_db = FakeDB()
+
+    def override_db():
+        return fake_db
+
+    app.dependency_overrides[get_db] = override_db
+
+    client = TestClient(app)
+    response = client.post("/users", params={"name": "Alice"})
+
+    assert response.json() == {"id": 1, "name": "Alice"}
+    assert fake_db.users == [{"id": 1, "name": "Alice"}]
+
+    app.dependency_overrides.clear()
+```
+
+<Note>
+You can override a generator dependency with a regular function, and vice versa. FastAPI handles both correctly.
+</Note>
+
+### Overriding Nested Dependencies
+
+When dependencies depend on other dependencies, you can override at any level:
+
+```python
+def get_database():
+    return Database()
+
+def get_repository(db = Depends(get_database)):
+    return UserRepository(db)
+
+@app.get("/users")
+def list_users(repo = Depends(get_repository)):
+    return repo.list_all()
+
+# Option 1: Override the leaf dependency
+def test_with_fake_db():
+    def override_db():
+        return FakeDatabase()
+
+    app.dependency_overrides[get_database] = override_db
+
+    client = TestClient(app)
+    response = client.get("/users")
+    # Uses FakeDatabase through get_repository
+
+    app.dependency_overrides.clear()
+
+# Option 2: Override the top-level dependency
+def test_with_fake_repo():
+    def override_repo():
+        return FakeRepository([{"id": 1, "name": "Alice"}])
+
+    app.dependency_overrides[get_repository] = override_repo
+
+    client = TestClient(app)
+    response = client.get("/users")
+    # Directly uses FakeRepository, get_database never called
+
+    app.dependency_overrides.clear()
+```
+
+<Tip>
+Override at the highest level that makes sense for your test. This minimizes the number of overrides needed.
+</Tip>
+
+### Overriding Router Dependencies
+
+Dependencies in routers are also overridable:
+
+```python
+from fastapi import APIRouter, Depends
+
+router = APIRouter()
+
+def get_settings():
+    return {"feature_enabled": True}
+
+@router.get("/feature")
+def check_feature(settings = Depends(get_settings)):
+    return settings
+
+app.include_router(router)
+
+def test_feature_disabled():
+    def override_settings():
+        return {"feature_enabled": False}
+
+    app.dependency_overrides[get_settings] = override_settings
+
+    client = TestClient(app)
+    response = client.get("/feature")
+
+    assert response.json() == {"feature_enabled": False}
+
+    app.dependency_overrides.clear()
+```
+
+### Overriding with Async Dependencies
+
+Async dependencies can override sync dependencies and vice versa:
+
+```python
+# Production: async dependency
+async def get_user_async(user_id: int):
+    async with httpx.AsyncClient() as client:
+        response = await client.get(f"https://api.example.com/users/{user_id}")
+        return response.json()
+
+@app.get("/users/{user_id}")
+async def read_user(user = Depends(get_user_async)):
+    return user
+
+# Test: sync override
+def test_read_user():
+    def override_user_sync(user_id: int):
+        # Sync function overriding async
+        return {"id": user_id, "name": "Test User"}
+
+    app.dependency_overrides[get_user_async] = override_user_sync
+
+    client = TestClient(app)
+    response = client.get("/users/123")
+
+    assert response.json() == {"id": 123, "name": "Test User"}
+
+    app.dependency_overrides.clear()
+```
+
+<Info>
+FastAPI automatically handles async/sync conversions when resolving overrides.
+</Info>
+
+## Testing Patterns
+
+### Using Pytest Fixtures
+
+Create reusable override fixtures:
+
+```python
+import pytest
+from fastapi.testclient import TestClient
+
+@pytest.fixture
+def client():
+    return TestClient(app)
+
+@pytest.fixture
+def override_db():
+    def _override():
+        return FakeDatabase()
+
+    app.dependency_overrides[get_database] = _override
+    yield
+    app.dependency_overrides.clear()
+
+def test_create_user(client, override_db):
+    response = client.post("/users", json={"name": "Alice"})
+    assert response.status_code == 200
+
+def test_list_users(client, override_db):
+    response = client.get("/users")
+    assert response.status_code == 200
+```
+
+### Context Manager for Overrides
+
+Create a context manager for temporary overrides:
+
+```python
+from contextlib import contextmanager
+
+@contextmanager
+def override_dependency(app, original, override):
+    app.dependency_overrides[original] = override
+    try:
+        yield
+    finally:
+        app.dependency_overrides.pop(original, None)
+
+def test_with_context_manager():
+    def fake_db():
+        return FakeDatabase()
+
+    client = TestClient(app)
+
+    with override_dependency(app, get_database, fake_db):
+        response = client.get("/users")
+        assert response.status_code == 200
+
+    # Override automatically cleaned up
+```
+
+### Testing Multiple Overrides
+
+```python
+def test_multiple_overrides():
+    def override_db():
+        return FakeDatabase()
+
+    def override_cache():
+        return FakeCache()
+
+    def override_queue():
+        return FakeQueue()
+
+    app.dependency_overrides = {
+        get_database: override_db,
+        get_cache: override_cache,
+        get_queue: override_queue,
+    }
+
+    client = TestClient(app)
+    response = client.post("/process")
+
+    assert response.status_code == 200
+
+    app.dependency_overrides.clear()
+```
+
+<Warning>
+Always clean up overrides after tests. Use fixtures, context managers, or explicit cleanup to prevent test pollution.
+</Warning>
+
+## Common Patterns
+
+### Mocking External APIs
+
+```python
+import httpx
+
+async def get_external_data():
+    async with httpx.AsyncClient() as client:
+        response = await client.get("https://external-api.com/data")
+        return response.json()
+
+@app.get("/proxy")
+async def proxy_data(data = Depends(get_external_data)):
+    return data
+
+def test_proxy_data():
+    async def override_external():
+        # No actual HTTP request
+        return {"mocked": True, "data": [1, 2, 3]}
+
+    app.dependency_overrides[get_external_data] = override_external
+
+    client = TestClient(app)
+    response = client.get("/proxy")
+
+    assert response.json() == {"mocked": True, "data": [1, 2, 3]}
+
+    app.dependency_overrides.clear()
+```
+
+### Testing Authentication
+
+```python
+from fastapi import Security, HTTPException
+from fastapi.security import HTTPBearer
+
+security = HTTPBearer()
+
+def get_current_user(token = Security(security)):
+    # Validate JWT token
+    if not validate_jwt(token.credentials):
+        raise HTTPException(status_code=401)
+    return decode_jwt(token.credentials)
+
+@app.get("/protected")
+def protected_route(user = Depends(get_current_user)):
+    return {"user": user}
+
+def test_protected_route():
+    def override_user():
+        return {"id": 1, "username": "testuser"}
+
+    app.dependency_overrides[get_current_user] = override_user
+
+    client = TestClient(app)
+    # No Authorization header needed
+    response = client.get("/protected")
+
+    assert response.status_code == 200
+    assert response.json() == {"user": {"id": 1, "username": "testuser"}}
+
+    app.dependency_overrides.clear()
+```
+
+### Testing with Stateful Mocks
+
+```python
+def test_user_workflow():
+    class FakeUserDB:
+        def __init__(self):
+            self.users = {}
+            self.next_id = 1
+
+        def create(self, name):
+            user = {"id": self.next_id, "name": name}
+            self.users[self.next_id] = user
+            self.next_id += 1
+            return user
+
+        def get(self, user_id):
+            return self.users.get(user_id)
+
+    fake_db = FakeUserDB()
+
+    def override_db():
+        return fake_db
+
+    app.dependency_overrides[get_database] = override_db
+
+    client = TestClient(app)
+
+    # Create user
+    response = client.post("/users", json={"name": "Alice"})
+    user_id = response.json()["id"]
+
+    # Retrieve user
+    response = client.get(f"/users/{user_id}")
+    assert response.json() == {"id": user_id, "name": "Alice"}
+
+    # Verify state in mock
+    assert len(fake_db.users) == 1
+
+    app.dependency_overrides.clear()
+```
+
+## Best Practices
+
+<Tip>
+**Always clean up overrides**: Use fixtures, context managers, or explicit cleanup to prevent tests from affecting each other.
+</Tip>
+
+<Tip>
+**Override at the right level**: Override leaf dependencies for unit tests, higher-level dependencies for integration tests.
+</Tip>
+
+<Tip>
+**Use stateful mocks carefully**: When your mock needs state (like a fake database), ensure it's reset between tests.
+</Tip>
+
+<Note>
+**Type hints still apply**: Even though you're overriding dependencies, FastAPI still validates and converts parameters based on type hints.
+</Note>
+
+<Warning>
+**Don't override in production**: `dependency_overrides` is for testing only. Never use it in production code.
+</Warning>
+
+## See Also
+
+- [Testing](/tutorial/testing) - General testing guide
+- [Advanced Dependencies](/advanced/advanced-dependencies) - Advanced dependency patterns
+- [Testing Dependencies with Overrides](https://fastapi.tiangolo.com/advanced/testing-dependencies/) - FastAPI docs

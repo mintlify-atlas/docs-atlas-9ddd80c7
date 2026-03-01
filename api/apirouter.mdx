@@ -1,0 +1,432 @@
+---
+title: APIRouter
+description: Router class for organizing FastAPI path operations into modular components
+---
+
+The `APIRouter` class is used to group path operations together, typically for organizing an application into multiple files. It provides the same interface as `FastAPI` for defining routes but can be included in the main application or other routers.
+
+## Class Signature
+
+```python
+from fastapi import APIRouter
+
+router = APIRouter(
+    prefix="",
+    tags=None,
+    dependencies=None,
+    responses=None,
+)
+```
+
+## Constructor Parameters
+
+<ParamField path="prefix" type="str" default="">
+  An optional path prefix for the router. Must start with `/` and not end with `/`.
+  
+  ```python
+  router = APIRouter(prefix="/api/v1")
+  ```
+</ParamField>
+
+<ParamField path="tags" type="list[str | Enum] | None" default="None">
+  A list of tags to be applied to all path operations in this router. It will be added to the generated OpenAPI.
+  
+  ```python
+  router = APIRouter(tags=["users", "authentication"])
+  ```
+</ParamField>
+
+<ParamField path="dependencies" type="Sequence[Depends] | None" default="None">
+  A list of dependencies to be applied to all path operations in this router.
+  
+  ```python
+  from fastapi import Depends
+  
+  router = APIRouter(
+      dependencies=[Depends(verify_token), Depends(verify_key)]
+  )
+  ```
+</ParamField>
+
+<ParamField path="default_response_class" type="type[Response]" default="JSONResponse">
+  The default response class to be used for all path operations in this router.
+  
+  ```python
+  from fastapi.responses import ORJSONResponse
+  
+  router = APIRouter(default_response_class=ORJSONResponse)
+  ```
+</ParamField>
+
+<ParamField path="responses" type="dict[int | str, dict[str, Any]] | None" default="None">
+  Additional responses to be shown in OpenAPI for all path operations in this router.
+  
+  ```python
+  router = APIRouter(
+      responses={
+          404: {"description": "Not found"},
+          500: {"description": "Internal server error"},
+      }
+  )
+  ```
+</ParamField>
+
+<ParamField path="callbacks" type="list[BaseRoute] | None" default="None">
+  OpenAPI callbacks that should apply to all path operations in this router.
+</ParamField>
+
+<ParamField path="redirect_slashes" type="bool" default="True">
+  Whether to detect and redirect slashes in URLs when the client doesn't use the same format.
+</ParamField>
+
+<ParamField path="deprecated" type="bool | None" default="None">
+  Mark all path operations in this router as deprecated in the generated OpenAPI.
+  
+  ```python
+  router = APIRouter(deprecated=True)
+  ```
+</ParamField>
+
+<ParamField path="include_in_schema" type="bool" default="True">
+  Whether to include all path operations in this router in the generated OpenAPI.
+  
+  ```python
+  router = APIRouter(include_in_schema=False)
+  ```
+</ParamField>
+
+<ParamField path="lifespan" type="Lifespan[Any] | None" default="None">
+  A Lifespan context manager handler for startup and shutdown events.
+</ParamField>
+
+<ParamField path="route_class" type="type[APIRoute]" default="APIRoute">
+  Custom route class to be used by this router.
+</ParamField>
+
+<ParamField path="generate_unique_id_function" type="Callable[[APIRoute], str]" default="generate_unique_id">
+  Customize the function used to generate unique IDs for path operations.
+</ParamField>
+
+<ParamField path="strict_content_type" type="bool" default="True">
+  Enable strict checking for request Content-Type headers.
+</ParamField>
+
+## Methods
+
+<Accordion title="Path Operation Decorators">
+
+### `@router.get(path, **kwargs)`
+
+Define a GET endpoint.
+
+```python
+@router.get("/items/{item_id}")
+async def read_item(item_id: int):
+    return {"item_id": item_id}
+```
+
+### `@router.post(path, **kwargs)`
+
+Define a POST endpoint.
+
+```python
+@router.post("/items/")
+async def create_item(item: Item):
+    return item
+```
+
+### `@router.put(path, **kwargs)`
+
+Define a PUT endpoint.
+
+```python
+@router.put("/items/{item_id}")
+async def update_item(item_id: int, item: Item):
+    return {"item_id": item_id, **item.dict()}
+```
+
+### `@router.patch(path, **kwargs)`
+
+Define a PATCH endpoint.
+
+### `@router.delete(path, **kwargs)`
+
+Define a DELETE endpoint.
+
+### `@router.options(path, **kwargs)`
+
+Define an OPTIONS endpoint.
+
+### `@router.head(path, **kwargs)`
+
+Define a HEAD endpoint.
+
+### `@router.trace(path, **kwargs)`
+
+Define a TRACE endpoint.
+
+All decorators accept the same parameters as `FastAPI` path operation decorators:
+
+<ParamField path="response_model" type="Any">
+  Pydantic model for response validation.
+</ParamField>
+
+<ParamField path="status_code" type="int | None">
+  Default status code for the response.
+</ParamField>
+
+<ParamField path="tags" type="list[str | Enum] | None">
+  Tags for OpenAPI documentation.
+</ParamField>
+
+<ParamField path="dependencies" type="Sequence[Depends] | None">
+  Additional dependencies for this specific route.
+</ParamField>
+
+<ParamField path="summary" type="str | None">
+  Short summary for OpenAPI documentation.
+</ParamField>
+
+<ParamField path="description" type="str | None">
+  Detailed description for OpenAPI documentation.
+</ParamField>
+
+<ParamField path="deprecated" type="bool | None">
+  Mark this route as deprecated.
+</ParamField>
+
+</Accordion>
+
+<Accordion title="add_api_route()">
+
+### `add_api_route(path, endpoint, **kwargs)`
+
+Add an API route programmatically.
+
+```python
+router.add_api_route(
+    "/items/",
+    read_items,
+    methods=["GET"],
+    tags=["items"],
+)
+```
+
+Accepts the same parameters as the path operation decorators.
+
+</Accordion>
+
+<Accordion title="include_router()">
+
+### `include_router(router, *, prefix="", tags=None, dependencies=None, **kwargs)`
+
+Include another `APIRouter` in this router.
+
+<ParamField path="router" type="APIRouter" required>
+  The APIRouter to include.
+</ParamField>
+
+<ParamField path="prefix" type="str" default="">
+  URL path prefix for all routes in the included router.
+</ParamField>
+
+<ParamField path="tags" type="list[str | Enum] | None">
+  Additional tags to be applied to all routes.
+</ParamField>
+
+<ParamField path="dependencies" type="Sequence[Depends] | None">
+  Additional dependencies to be applied to all routes.
+</ParamField>
+
+<ParamField path="deprecated" type="bool | None">
+  Mark all routes as deprecated.
+</ParamField>
+
+<ParamField path="include_in_schema" type="bool" default="True">
+  Include routes in OpenAPI schema.
+</ParamField>
+
+```python
+from fastapi import APIRouter
+
+api_router = APIRouter()
+users_router = APIRouter()
+
+@users_router.get("/")
+def read_users():
+    return [{"name": "Rick"}, {"name": "Morty"}]
+
+api_router.include_router(users_router, prefix="/users", tags=["users"])
+```
+
+</Accordion>
+
+<Accordion title="add_api_websocket_route()">
+
+### `add_api_websocket_route(path, endpoint, name=None, *, dependencies=None)`
+
+Add a WebSocket route programmatically.
+
+<ParamField path="path" type="str" required>
+  WebSocket path.
+</ParamField>
+
+<ParamField path="endpoint" type="Callable" required>
+  WebSocket endpoint function.
+</ParamField>
+
+<ParamField path="name" type="str | None">
+  Name for the WebSocket route.
+</ParamField>
+
+<ParamField path="dependencies" type="Sequence[Depends] | None">
+  Dependencies for this WebSocket route.
+</ParamField>
+
+```python
+router.add_api_websocket_route("/ws", websocket_endpoint)
+```
+
+</Accordion>
+
+<Accordion title="websocket()">
+
+### `@router.websocket(path, name=None, *, dependencies=None)`
+
+Define a WebSocket endpoint.
+
+```python
+from fastapi import APIRouter, WebSocket
+
+router = APIRouter()
+
+@router.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    while True:
+        data = await websocket.receive_text()
+        await websocket.send_text(f"Message: {data}")
+```
+
+</Accordion>
+
+## Attributes
+
+<ResponseField name="prefix" type="str">
+  The path prefix for this router.
+</ResponseField>
+
+<ResponseField name="tags" type="list[str | Enum]">
+  Tags applied to all routes in this router.
+</ResponseField>
+
+<ResponseField name="dependencies" type="list[Depends]">
+  Dependencies applied to all routes in this router.
+</ResponseField>
+
+<ResponseField name="routes" type="list[BaseRoute]">
+  List of all routes registered in this router.
+</ResponseField>
+
+<ResponseField name="deprecated" type="bool | None">
+  Whether all routes are marked as deprecated.
+</ResponseField>
+
+<ResponseField name="include_in_schema" type="bool">
+  Whether routes are included in the OpenAPI schema.
+</ResponseField>
+
+## Example: Organizing Routes
+
+```python
+# app/routers/users.py
+from fastapi import APIRouter, Depends
+from ..dependencies import get_token_header
+
+router = APIRouter(
+    prefix="/users",
+    tags=["users"],
+    dependencies=[Depends(get_token_header)],
+    responses={404: {"description": "Not found"}},
+)
+
+@router.get("/")
+async def read_users():
+    return [{"username": "Rick"}, {"username": "Morty"}]
+
+@router.get("/me")
+async def read_user_me():
+    return {"username": "current_user"}
+
+@router.get("/{username}")
+async def read_user(username: str):
+    return {"username": username}
+```
+
+```python
+# app/routers/items.py
+from fastapi import APIRouter
+
+router = APIRouter(
+    prefix="/items",
+    tags=["items"],
+    responses={404: {"description": "Not found"}},
+)
+
+@router.get("/")
+async def read_items():
+    return [{"name": "Portal Gun"}, {"name": "Plumbus"}]
+
+@router.get("/{item_id}")
+async def read_item(item_id: int):
+    return {"item_id": item_id, "name": "Portal Gun"}
+```
+
+```python
+# app/main.py
+from fastapi import FastAPI
+from .routers import users, items
+
+app = FastAPI()
+
+app.include_router(users.router)
+app.include_router(items.router)
+
+@app.get("/")
+async def root():
+    return {"message": "Hello World"}
+```
+
+## Example: Nested Routers
+
+```python
+from fastapi import APIRouter, FastAPI
+
+app = FastAPI()
+
+# Main API router
+api_router = APIRouter(prefix="/api/v1")
+
+# Sub-routers
+users_router = APIRouter(prefix="/users", tags=["users"])
+items_router = APIRouter(prefix="/items", tags=["items"])
+
+@users_router.get("/")
+def get_users():
+    return [{"username": "user1"}]
+
+@items_router.get("/")
+def get_items():
+    return [{"name": "item1"}]
+
+# Include sub-routers in main router
+api_router.include_router(users_router)
+api_router.include_router(items_router)
+
+# Include main router in app
+app.include_router(api_router)
+
+# URLs will be:
+# /api/v1/users/
+# /api/v1/items/
+```

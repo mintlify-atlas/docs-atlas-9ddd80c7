@@ -1,0 +1,385 @@
+---
+title: Request
+description: Request object for accessing HTTP request data in FastAPI
+---
+
+The `Request` object provides access to all incoming HTTP request data including headers, body, query parameters, path parameters, cookies, and more. FastAPI uses Starlette's `Request` class.
+
+## Importing
+
+```python
+from fastapi import Request
+```
+
+## Usage in Path Operations
+
+You can declare a `Request` parameter in your path operation function to access the raw request object:
+
+```python
+from fastapi import FastAPI, Request
+
+app = FastAPI()
+
+@app.get("/items/{item_id}")
+async def read_item(item_id: str, request: Request):
+    client_host = request.client.host
+    return {"item_id": item_id, "client_host": client_host}
+```
+
+## Attributes
+
+<ResponseField name="method" type="str">
+  The HTTP method (e.g., "GET", "POST", "PUT", "DELETE").
+  
+  ```python
+  @app.get("/")
+  async def read_root(request: Request):
+      return {"method": request.method}  # "GET"
+  ```
+</ResponseField>
+
+<ResponseField name="url" type="URL">
+  The full URL of the request, including scheme, host, port, and path.
+  
+  ```python
+  @app.get("/items")
+  async def read_items(request: Request):
+      return {
+          "url": str(request.url),
+          "scheme": request.url.scheme,  # "http" or "https"
+          "hostname": request.url.hostname,
+          "port": request.url.port,
+          "path": request.url.path,
+      }
+  ```
+</ResponseField>
+
+<ResponseField name="headers" type="Headers">
+  HTTP headers from the request. Case-insensitive dict-like object.
+  
+  ```python
+  @app.get("/")
+  async def read_root(request: Request):
+      user_agent = request.headers.get("user-agent")
+      authorization = request.headers.get("authorization")
+      return {"user_agent": user_agent}
+  ```
+</ResponseField>
+
+<ResponseField name="query_params" type="QueryParams">
+  Query parameters from the URL. Dict-like object.
+  
+  ```python
+  @app.get("/items")
+  async def read_items(request: Request):
+      # For URL: /items?skip=0&limit=10
+      skip = request.query_params.get("skip")
+      limit = request.query_params.get("limit")
+      return {"skip": skip, "limit": limit}
+  ```
+</ResponseField>
+
+<ResponseField name="path_params" type="dict[str, Any]">
+  Path parameters extracted from the URL path.
+  
+  ```python
+  @app.get("/items/{item_id}")
+  async def read_item(request: Request):
+      item_id = request.path_params["item_id"]
+      return {"item_id": item_id}
+  ```
+</ResponseField>
+
+<ResponseField name="cookies" type="dict[str, str]">
+  Cookies from the request.
+  
+  ```python
+  @app.get("/")
+  async def read_root(request: Request):
+      session_id = request.cookies.get("session_id")
+      return {"session_id": session_id}
+  ```
+</ResponseField>
+
+<ResponseField name="client" type="Address | None">
+  Client address information (host and port).
+  
+  ```python
+  @app.get("/")
+  async def read_root(request: Request):
+      if request.client:
+          return {
+              "host": request.client.host,
+              "port": request.client.port,
+          }
+      return {"client": "unknown"}
+  ```
+</ResponseField>
+
+<ResponseField name="app" type="FastAPI">
+  The FastAPI application instance.
+  
+  ```python
+  @app.get("/")
+  async def read_root(request: Request):
+      return {"title": request.app.title}
+  ```
+</ResponseField>
+
+<ResponseField name="state" type="State">
+  State object that can be used to store arbitrary data during the request lifecycle.
+  
+  ```python
+  @app.middleware("http")
+  async def add_process_time_header(request: Request, call_next):
+      request.state.start_time = time.time()
+      response = await call_next(request)
+      return response
+  ```
+</ResponseField>
+
+<ResponseField name="scope" type="dict[str, Any]">
+  ASGI scope dictionary containing all request information.
+</ResponseField>
+
+## Methods
+
+<Accordion title="json()">
+
+### `async json()`
+
+Parse and return the request body as JSON.
+
+```python
+from fastapi import FastAPI, Request
+
+app = FastAPI()
+
+@app.post("/items/")
+async def create_item(request: Request):
+    body = await request.json()
+    return {"received": body}
+```
+
+**Returns:** `Any` - The parsed JSON data
+
+</Accordion>
+
+<Accordion title="body()">
+
+### `async body()`
+
+Get the raw request body as bytes.
+
+```python
+@app.post("/upload/")
+async def upload(request: Request):
+    raw_body = await request.body()
+    return {"size": len(raw_body)}
+```
+
+**Returns:** `bytes` - The raw request body
+
+</Accordion>
+
+<Accordion title="form()">
+
+### `async form()`
+
+Parse and return the request body as form data.
+
+```python
+@app.post("/login/")
+async def login(request: Request):
+    form_data = await request.form()
+    username = form_data.get("username")
+    password = form_data.get("password")
+    return {"username": username}
+```
+
+**Returns:** `FormData` - The parsed form data
+
+</Accordion>
+
+<Accordion title="is_disconnected()">
+
+### `is_disconnected()`
+
+Check if the client has disconnected.
+
+```python
+@app.get("/stream")
+async def stream(request: Request):
+    async def generate():
+        for i in range(100):
+            if await request.is_disconnected():
+                break
+            yield f"data: {i}\n\n"
+    return StreamingResponse(generate())
+```
+
+**Returns:** `bool` - True if the client has disconnected
+
+</Accordion>
+
+<Accordion title="stream()">
+
+### `stream()`
+
+Stream the request body in chunks.
+
+```python
+@app.post("/upload-stream/")
+async def upload_stream(request: Request):
+    total_size = 0
+    async for chunk in request.stream():
+        total_size += len(chunk)
+    return {"total_size": total_size}
+```
+
+**Returns:** `AsyncIterator[bytes]` - An async iterator of body chunks
+
+</Accordion>
+
+<Accordion title="url_for()">
+
+### `url_for(name, **path_params)`
+
+Generate a URL for a named route.
+
+<ParamField path="name" type="str" required>
+  Name of the route.
+</ParamField>
+
+<ParamField path="**path_params" type="Any">
+  Path parameters for the route.
+</ParamField>
+
+```python
+@app.get("/items/{item_id}", name="read_item")
+async def read_item(item_id: int):
+    return {"item_id": item_id}
+
+@app.get("/")
+async def root(request: Request):
+    url = request.url_for("read_item", item_id=123)
+    return {"url": str(url)}  # "/items/123"
+```
+
+**Returns:** `URL` - The generated URL
+
+</Accordion>
+
+## Common Use Cases
+
+### Accessing Headers
+
+```python
+from fastapi import FastAPI, Request, HTTPException
+
+app = FastAPI()
+
+@app.get("/secure-data")
+async def get_secure_data(request: Request):
+    auth_header = request.headers.get("authorization")
+    if not auth_header:
+        raise HTTPException(status_code=401, detail="Missing authorization header")
+    
+    return {"data": "secure information"}
+```
+
+### Reading Custom Headers
+
+```python
+@app.get("/items")
+async def read_items(request: Request):
+    custom_header = request.headers.get("x-custom-header")
+    return {"custom_header": custom_header}
+```
+
+### Accessing Client Information
+
+```python
+@app.get("/client-info")
+async def get_client_info(request: Request):
+    if request.client:
+        return {
+            "host": request.client.host,
+            "port": request.client.port,
+            "user_agent": request.headers.get("user-agent"),
+        }
+    return {"error": "Client information not available"}
+```
+
+### Working with Request State
+
+```python
+from fastapi import FastAPI, Request
+import time
+
+app = FastAPI()
+
+@app.middleware("http")
+async def add_timing_middleware(request: Request, call_next):
+    request.state.start_time = time.time()
+    response = await call_next(request)
+    process_time = time.time() - request.state.start_time
+    response.headers["X-Process-Time"] = str(process_time)
+    return response
+
+@app.get("/items")
+async def read_items(request: Request):
+    # Access state set by middleware
+    start_time = request.state.start_time
+    return {"items": ["item1", "item2"]}
+```
+
+### Reading Raw Request Body
+
+```python
+@app.post("/webhook")
+async def webhook(request: Request):
+    # For validating webhook signatures
+    body = await request.body()
+    signature = request.headers.get("x-webhook-signature")
+    
+    # Validate signature with raw body
+    # ...
+    
+    return {"status": "received"}
+```
+
+### Combining Request with Other Parameters
+
+```python
+from fastapi import FastAPI, Request, Query
+from pydantic import BaseModel
+
+class Item(BaseModel):
+    name: str
+    price: float
+
+@app.post("/items/{item_id}")
+async def create_item(
+    item_id: int,
+    item: Item,
+    request: Request,
+    q: str | None = Query(None),
+):
+    return {
+        "item_id": item_id,
+        "item": item,
+        "query": q,
+        "client_host": request.client.host if request.client else None,
+    }
+```
+
+## Note on Direct Usage
+
+While the `Request` object provides direct access to all request data, FastAPI's parameter declaration system (using `Query`, `Path`, `Body`, `Header`, etc.) is often more convenient and provides automatic validation and documentation. Use the `Request` object when you need:
+
+- Access to raw request data
+- Custom header processing
+- Client information
+- Request state
+- Functionality not covered by FastAPI's parameter system

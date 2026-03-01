@@ -1,0 +1,390 @@
+---
+title: Metadata and Docs URLs
+description: Customize your API's OpenAPI metadata, documentation, and configure docs URLs
+---
+
+FastAPI automatically generates OpenAPI documentation for your API. You can customize the metadata that appears in the generated docs.
+
+## Metadata for API
+
+You can configure metadata when creating your `FastAPI` application:
+
+```python
+from fastapi import FastAPI
+
+description = """
+ChimichangApp API helps you do awesome stuff. 🚀
+
+## Items
+
+You can **read items**.
+
+## Users
+
+You will be able to:
+
+* **Create users** (_not implemented_).
+* **Read users** (_not implemented_).
+"""
+
+app = FastAPI(
+    title="ChimichangApp",
+    description=description,
+    summary="Deadpool's favorite app. Nuff said.",
+    version="0.0.1",
+    terms_of_service="http://example.com/terms/",
+    contact={
+        "name": "Deadpoolio the Amazing",
+        "url": "http://x-force.example.com/contact/",
+        "email": "dp@x-force.example.com",
+    },
+    license_info={
+        "name": "Apache 2.0",
+        "url": "https://www.apache.org/licenses/LICENSE-2.0.html",
+    },
+)
+
+@app.get("/items/")
+async def read_items():
+    return [{"name": "Katana"}]
+```
+
+<Info>
+All metadata parameters are optional. You only need to include the ones you want to customize.
+</Info>
+
+## Metadata Parameters
+
+<Steps>
+
+<Step title="title">
+The title of your API. Defaults to `"FastAPI"`.
+
+```python
+app = FastAPI(title="My Super Project")
+```
+
+This appears as the main heading in the documentation.
+</Step>
+
+<Step title="summary">
+A short summary of the API. Added in OpenAPI 3.1.0.
+
+```python
+app = FastAPI(summary="This API does amazing things")
+```
+</Step>
+
+<Step title="description">
+A longer description of the API. Supports Markdown (CommonMark syntax).
+
+```python
+description = """
+## Features
+
+* **Fast**: High performance thanks to Starlette and Pydantic
+* **Easy**: Designed to be easy to use and learn
+* **Robust**: Production-ready code with automatic interactive documentation
+"""
+
+app = FastAPI(description=description)
+```
+
+The description can be multiline and include Markdown formatting.
+</Step>
+
+<Step title="version">
+The version of your API (not the OpenAPI version or FastAPI version).
+
+```python
+app = FastAPI(version="1.0.0")
+```
+</Step>
+
+<Step title="terms_of_service">
+URL to your terms of service.
+
+```python
+app = FastAPI(terms_of_service="https://example.com/terms/")
+```
+</Step>
+
+<Step title="contact">
+Contact information for the API. A dictionary with:
+- `name`: Contact name
+- `url`: Contact URL
+- `email`: Contact email
+
+```python
+app = FastAPI(
+    contact={
+        "name": "API Support",
+        "url": "https://example.com/support",
+        "email": "support@example.com",
+    }
+)
+```
+</Step>
+
+<Step title="license_info">
+License information for the API. A dictionary with:
+- `name`: License name (required)
+- `identifier`: SPDX license identifier (optional)
+- `url`: License URL (optional)
+
+```python
+app = FastAPI(
+    license_info={
+        "name": "MIT",
+        "url": "https://opensource.org/licenses/MIT",
+    }
+)
+```
+</Step>
+
+</Steps>
+
+## Metadata for Tags
+
+You can add metadata for the tags used to group path operations:
+
+```python
+from fastapi import FastAPI
+
+tags_metadata = [
+    {
+        "name": "users",
+        "description": "Operations with users. The **login** logic is also here.",
+    },
+    {
+        "name": "items",
+        "description": "Manage items. So _fancy_ they have their own docs.",
+        "externalDocs": {
+            "description": "Items external docs",
+            "url": "https://fastapi.tiangolo.com/",
+        },
+    },
+]
+
+app = FastAPI(openapi_tags=tags_metadata)
+
+@app.get("/users/", tags=["users"])
+async def get_users():
+    return [{"name": "Harry"}, {"name": "Ron"}]
+
+@app.get("/items/", tags=["items"])
+async def get_items():
+    return [{"name": "wand"}, {"name": "flying broom"}]
+```
+
+### Tag Metadata Structure
+
+Each tag metadata dictionary can contain:
+
+- `name`: Tag name (must match the tag used in path operations)
+- `description`: Short description (supports Markdown)
+- `externalDocs`: External documentation
+  - `description`: Description of external docs
+  - `url`: URL to external documentation
+
+<Note>
+You don't have to add metadata for all tags. Tags without metadata will still work, they just won't have additional descriptions.
+</Note>
+
+## Tag Ordering
+
+The order of tags in the `openapi_tags` list determines the order shown in the automatic documentation (Swagger UI):
+
+```python
+tags_metadata = [
+    {"name": "users", "description": "User operations."},
+    {"name": "items", "description": "Item operations."},
+    {"name": "admin", "description": "Admin operations."},
+]
+
+app = FastAPI(openapi_tags=tags_metadata)
+```
+
+Tags will appear in the docs in this order: users, items, admin.
+
+## OpenAPI URL
+
+By default, the OpenAPI schema is served at `/openapi.json`. You can customize this:
+
+```python
+app = FastAPI(openapi_url="/api/v1/openapi.json")
+```
+
+Now the OpenAPI schema will be available at `/api/v1/openapi.json`.
+
+### Disable OpenAPI Schema
+
+To disable the OpenAPI schema entirely:
+
+```python
+app = FastAPI(openapi_url=None)
+```
+
+<Warning>
+If you set `openapi_url=None`, the automatic documentation UIs (`/docs` and `/redoc`) will also be disabled since they depend on the OpenAPI schema.
+</Warning>
+
+## Docs URLs
+
+FastAPI provides two documentation UIs by default:
+
+- **Swagger UI**: at `/docs`
+- **ReDoc**: at `/redoc`
+
+### Customize Docs URLs
+
+```python
+app = FastAPI(
+    docs_url="/documentation",  # Swagger UI
+    redoc_url="/redocumentation",  # ReDoc
+)
+```
+
+### Disable Documentation UIs
+
+To disable one or both:
+
+```python
+# Disable Swagger UI
+app = FastAPI(docs_url=None)
+
+# Disable ReDoc
+app = FastAPI(redoc_url=None)
+
+# Disable both
+app = FastAPI(docs_url=None, redoc_url=None)
+```
+
+<Tip>
+In production, you might want to disable the documentation UIs for security reasons, or restrict access to them using dependencies.
+</Tip>
+
+## OAuth2 Redirect URL
+
+Swagger UI can use OAuth2 authentication. The redirect URL is at `/docs/oauth2-redirect` by default:
+
+```python
+app = FastAPI(swagger_ui_oauth2_redirect_url="/api/docs/oauth2-redirect")
+```
+
+To disable it:
+
+```python
+app = FastAPI(swagger_ui_oauth2_redirect_url=None)
+```
+
+## Custom OpenAPI
+
+You can customize the generated OpenAPI schema by overriding the `openapi()` method:
+
+```python
+from fastapi import FastAPI
+from fastapi.openapi.utils import get_openapi
+
+app = FastAPI()
+
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    openapi_schema = get_openapi(
+        title="Custom title",
+        version="2.5.0",
+        summary="This is a very custom OpenAPI schema",
+        description="Here's a longer description",
+        routes=app.routes,
+    )
+    openapi_schema["info"]["x-logo"] = {
+        "url": "https://fastapi.tiangolo.com/img/logo-margin/logo-teal.png"
+    }
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+app.openapi = custom_openapi
+```
+
+<Info>
+The OpenAPI schema is cached in `app.openapi_schema`. It's generated the first time it's requested, then returned from cache on subsequent requests.
+</Info>
+
+## Servers Metadata
+
+You can specify server URLs in the OpenAPI schema:
+
+```python
+app = FastAPI(
+    servers=[
+        {"url": "https://stag.example.com", "description": "Staging environment"},
+        {"url": "https://prod.example.com", "description": "Production environment"},
+    ]
+)
+```
+
+This allows users of Swagger UI to switch between different server environments.
+
+## Complete Example
+
+```python
+from fastapi import FastAPI
+
+description = """
+Awesome API helps you manage your resources. 🚀
+
+## Resources
+
+You can:
+
+* **Create resources**
+* **Read resources**
+* **Update resources**
+* **Delete resources**
+"""
+
+tags_metadata = [
+    {
+        "name": "resources",
+        "description": "Operations with resources.",
+    },
+    {
+        "name": "admin",
+        "description": "Administrative operations.",
+        "externalDocs": {
+            "description": "Admin docs",
+            "url": "https://example.com/admin-docs",
+        },
+    },
+]
+
+app = FastAPI(
+    title="Awesome API",
+    description=description,
+    summary="The best API in the world",
+    version="1.0.0",
+    terms_of_service="https://example.com/terms/",
+    contact={
+        "name": "API Team",
+        "url": "https://example.com/contact",
+        "email": "api@example.com",
+    },
+    license_info={
+        "name": "MIT",
+        "url": "https://opensource.org/licenses/MIT",
+    },
+    openapi_tags=tags_metadata,
+    openapi_url="/api/openapi.json",
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
+)
+
+@app.get("/resources/", tags=["resources"])
+async def get_resources():
+    return [{"id": 1, "name": "Resource 1"}]
+
+@app.get("/admin/stats", tags=["admin"])
+async def get_stats():
+    return {"total": 100}
+```

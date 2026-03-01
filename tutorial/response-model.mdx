@@ -1,0 +1,349 @@
+---
+title: Response Model
+description: Learn how to use response_model to define and validate API responses in FastAPI
+---
+
+The `response_model` parameter allows you to define the structure of your API responses, providing automatic validation, serialization, and documentation.
+
+## Basic Response Model
+
+Use `response_model` to declare what your endpoint returns:
+
+```python
+from typing import Any
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class Item(BaseModel):
+    name: str
+    description: str | None = None
+    price: float
+    tax: float | None = None
+    tags: list[str] = []
+
+@app.post("/items/", response_model=Item)
+async def create_item(item: Item) -> Any:
+    return item
+
+@app.get("/items/", response_model=list[Item])
+async def read_items() -> Any:
+    return [
+        {"name": "Portal Gun", "price": 42.0},
+        {"name": "Plumbus", "price": 32.0},
+    ]
+```
+
+<Info>
+FastAPI uses the `response_model` to:
+- Convert the output data to the declared type
+- Validate the data
+- Add a JSON Schema for the response in the OpenAPI docs
+- Limit the output data to what's in the model
+</Info>
+
+## Return Type Annotations
+
+You can also use return type annotations (Python 3.9+):
+
+```python
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class Item(BaseModel):
+    name: str
+    description: str | None = None
+    price: float
+    tax: float | None = None
+
+@app.post("/items/")
+async def create_item(item: Item) -> Item:
+    return item
+
+@app.get("/items/")
+async def read_items() -> list[Item]:
+    return [
+        Item(name="Portal Gun", price=42.0),
+        Item(name="Plumbus", price=32.0),
+    ]
+```
+
+<Tip>
+Using return type annotations is the modern, recommended approach. It provides better type checking in your editor.
+</Tip>
+
+## Response Model vs Return Type
+
+<CodeGroup>
+```python Return Type Annotation (Recommended)
+@app.get("/items/")
+async def read_items() -> list[Item]:
+    return [Item(name="Foo", price=42.0)]
+# Clean, modern syntax
+```
+
+```python response_model Parameter
+@app.get("/items/", response_model=list[Item])
+async def read_items():
+    return [{"name": "Foo", "price": 42.0}]
+# Useful when return type differs from response
+```
+</CodeGroup>
+
+## Filtering Response Data
+
+One of the most powerful features is automatic filtering of response data:
+
+```python
+from fastapi import FastAPI
+from pydantic import BaseModel, EmailStr
+
+app = FastAPI()
+
+class UserIn(BaseModel):
+    username: str
+    password: str
+    email: EmailStr
+    full_name: str | None = None
+
+class UserOut(BaseModel):
+    username: str
+    email: EmailStr
+    full_name: str | None = None
+
+class UserInDB(BaseModel):
+    username: str
+    hashed_password: str
+    email: EmailStr
+    full_name: str | None = None
+
+def fake_password_hasher(raw_password: str):
+    return "supersecret" + raw_password
+
+def fake_save_user(user_in: UserIn):
+    hashed_password = fake_password_hasher(user_in.password)
+    user_in_db = UserInDB(**user_in.model_dump(), hashed_password=hashed_password)
+    print("User saved! ..not really")
+    return user_in_db
+
+@app.post("/user/", response_model=UserOut)
+async def create_user(user_in: UserIn):
+    user_saved = fake_save_user(user_in)
+    return user_saved
+```
+
+<Warning>
+Even though `user_saved` contains `hashed_password`, only the fields in `UserOut` are returned to the client. The password is automatically filtered out.
+</Warning>
+
+## Response Model with Default Values
+
+You can exclude fields with default values from the response:
+
+```python
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class Item(BaseModel):
+    name: str
+    description: str | None = None
+    price: float
+    tax: float = 10.5
+    tags: list[str] = []
+
+@app.get(
+    "/items/{item_id}",
+    response_model=Item,
+    response_model_exclude_unset=True
+)
+async def read_item(item_id: str):
+    items = {
+        "foo": {"name": "Foo", "price": 50.2},
+        "bar": {"name": "Bar", "description": "The bartenders", "price": 62, "tax": 20.2},
+    }
+    return items[item_id]
+```
+
+<Steps>
+  <Step title="response_model_exclude_unset=True">
+    Don't include fields that weren't explicitly set
+  </Step>
+  
+  <Step title="response_model_exclude_defaults=True">
+    Don't include fields with their default values
+  </Step>
+  
+  <Step title="response_model_exclude_none=True">
+    Don't include fields with None values
+  </Step>
+</Steps>
+
+## Include and Exclude Fields
+
+You can explicitly include or exclude specific fields:
+
+```python
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class Item(BaseModel):
+    name: str
+    description: str | None = None
+    price: float
+    tax: float | None = None
+
+@app.get(
+    "/items/{item_id}/name",
+    response_model=Item,
+    response_model_include={"name", "description"}
+)
+async def read_item_name(item_id: str):
+    return {"name": "Foo", "description": "A foo item", "price": 42.0}
+
+@app.get(
+    "/items/{item_id}/public",
+    response_model=Item,
+    response_model_exclude={"tax"}
+)
+async def read_item_public(item_id: str):
+    return {"name": "Bar", "description": "A bar item", "price": 62.0, "tax": 12.4}
+```
+
+<Note>
+Use sets (not lists) for `response_model_include` and `response_model_exclude`.
+</Note>
+
+## Multiple Models Pattern
+
+Create separate models for input and output:
+
+```python
+from fastapi import FastAPI
+from pydantic import BaseModel, EmailStr
+
+app = FastAPI()
+
+# Base model with common fields
+class UserBase(BaseModel):
+    username: str
+    email: EmailStr
+    full_name: str | None = None
+
+# Input model includes password
+class UserCreate(UserBase):
+    password: str
+
+# Output model excludes password
+class UserResponse(UserBase):
+    id: int
+
+# Database model includes hashed password
+class UserInDB(UserBase):
+    id: int
+    hashed_password: str
+
+@app.post("/users/", response_model=UserResponse)
+async def create_user(user: UserCreate):
+    # Hash password and save to database
+    user_in_db = UserInDB(
+        id=1,
+        **user.model_dump(exclude={"password"}),
+        hashed_password="hashed_" + user.password
+    )
+    return user_in_db
+```
+
+## Union Response Types
+
+Return different model types based on conditions:
+
+```python
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class ItemBase(BaseModel):
+    description: str
+    type: str
+
+class CarItem(ItemBase):
+    type: str = "car"
+
+class PlaneItem(ItemBase):
+    type: str = "plane"
+    size: int
+
+@app.get("/items/{item_id}", response_model=PlaneItem | CarItem)
+async def read_item(item_id: str):
+    items = {
+        "item1": {"description": "All my friends drive a low rider", "type": "car"},
+        "item2": {
+            "description": "Music is my aeroplane",
+            "type": "plane",
+            "size": 5,
+        },
+    }
+    return items[item_id]
+```
+
+<Info>
+The response will match whichever model is appropriate based on the data structure.
+</Info>
+
+## Response Model Benefits
+
+<Steps>
+  <Step title="Security">
+    Automatically filters sensitive data like passwords
+  </Step>
+  
+  <Step title="Documentation">
+    Generates accurate OpenAPI schema for responses
+  </Step>
+  
+  <Step title="Validation">
+    Validates outgoing data, catching bugs early
+  </Step>
+  
+  <Step title="Serialization">
+    Converts complex types to JSON-compatible formats
+  </Step>
+  
+  <Step title="Type Safety">
+    Provides editor autocomplete and type checking
+  </Step>
+</Steps>
+
+## Disabling Response Model
+
+In rare cases, you can disable response validation:
+
+```python
+from fastapi import FastAPI, Response
+
+app = FastAPI()
+
+@app.get("/portal", response_model=None)
+async def get_portal(teleport: bool = False) -> Response | dict:
+    if teleport:
+        return Response(status_code=307, headers={"Location": "https://example.com"})
+    return {"message": "Here's your interdimensional portal."}
+```
+
+<Warning>
+Only disable response models when absolutely necessary. You lose validation and documentation benefits.
+</Warning>
+
+## Related Topics
+
+- [Extra Models](/tutorial/extra-models) - Work with multiple related models
+- [Response Status Code](/tutorial/response-status-code) - Customize HTTP status codes
+- [Request Body](/tutorial/request-body) - Define request schemas

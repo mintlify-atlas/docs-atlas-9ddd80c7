@@ -1,0 +1,407 @@
+---
+title: Streaming Responses
+description: Stream large responses and files efficiently using StreamingResponse in FastAPI
+---
+
+Streaming responses allow you to send data to clients incrementally, which is ideal for large files, generated content, or any scenario where you want to start sending data before the entire response is ready.
+
+## Basic Streaming
+
+Create a streaming endpoint using `StreamingResponse` and a generator function:
+
+```python
+from collections.abc import AsyncIterable
+from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
+
+app = FastAPI()
+
+@app.get("/stream", response_class=StreamingResponse)
+async def stream_data() -> AsyncIterable[str]:
+    for i in range(10):
+        yield f"Chunk {i}\n"
+```
+
+<Note>
+The generator function can be either `async` (using `async def` and `yield`) or synchronous (using regular `def` and `yield`).
+</Note>
+
+## Streaming Text
+
+Stream text content line by line:
+
+```python
+from collections.abc import AsyncIterable
+from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
+
+app = FastAPI()
+
+message = """
+Line 1 of content
+Line 2 of content
+Line 3 of content
+"""
+
+@app.get("/story/stream", response_class=StreamingResponse)
+async def stream_story() -> AsyncIterable[str]:
+    for line in message.splitlines():
+        yield line
+```
+
+## Streaming Bytes
+
+Stream binary data:
+
+```python
+from collections.abc import AsyncIterable
+from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
+
+app = FastAPI()
+
+@app.get("/data/stream", response_class=StreamingResponse)
+async def stream_bytes() -> AsyncIterable[bytes]:
+    for i in range(10):
+        yield f"Chunk {i}\n".encode("utf-8")
+```
+
+<Info>
+`StreamingResponse` accepts both `str` and `bytes` iterators. String content is automatically encoded as UTF-8.
+</Info>
+
+## Streaming Files
+
+Stream large files efficiently:
+
+```python
+from collections.abc import AsyncIterable
+from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
+
+app = FastAPI()
+
+@app.get("/video/stream")
+async def stream_video() -> StreamingResponse:
+    def file_generator():
+        with open("large_video.mp4", "rb") as f:
+            while chunk := f.read(8192):  # Read 8KB at a time
+                yield chunk
+    
+    return StreamingResponse(
+        file_generator(),
+        media_type="video/mp4",
+        headers={"Content-Disposition": "inline; filename=video.mp4"}
+    )
+```
+
+<Tip>
+For static file serving, consider using `FileResponse` instead, which handles range requests and caching automatically.
+</Tip>
+
+## Custom Media Types
+
+Create custom streaming response classes with specific media types:
+
+```python
+from collections.abc import AsyncIterable
+from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
+
+class PNGStreamingResponse(StreamingResponse):
+    media_type = "image/png"
+
+app = FastAPI()
+
+@app.get("/image/stream", response_class=PNGStreamingResponse)
+async def stream_image() -> AsyncIterable[bytes]:
+    with open("image.png", "rb") as f:
+        while chunk := f.read(8192):
+            yield chunk
+```
+
+## Synchronous Generators
+
+Use regular (non-async) generator functions:
+
+```python
+from collections.abc import Iterable
+from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
+
+app = FastAPI()
+
+@app.get("/data/stream", response_class=StreamingResponse)
+def stream_data() -> Iterable[str]:
+    for i in range(10):
+        yield f"Chunk {i}\n"
+```
+
+<Warning>
+Synchronous generators block the event loop. Use async generators for I/O-bound operations to maintain high concurrency.
+</Warning>
+
+## Generator Without Type Annotations
+
+You can omit type annotations if needed:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
+
+app = FastAPI()
+
+@app.get("/stream", response_class=StreamingResponse)
+async def stream_data():
+    for i in range(10):
+        yield f"Chunk {i}\n"
+```
+
+## StreamingResponse Constructor
+
+Create `StreamingResponse` instances directly:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
+
+app = FastAPI()
+
+def generate_data():
+    for i in range(100):
+        yield f"Data chunk {i}\n"
+
+@app.get("/data")
+def stream_data():
+    return StreamingResponse(
+        generate_data(),
+        media_type="text/plain",
+        status_code=200,
+        headers={"X-Custom-Header": "value"}
+    )
+```
+
+## Streaming with yield from
+
+Use `yield from` to delegate to another generator:
+
+```python
+from collections.abc import Iterable
+from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
+
+app = FastAPI()
+
+def read_file():
+    with open("data.txt", "r") as f:
+        for line in f:
+            yield line
+
+@app.get("/file/stream", response_class=StreamingResponse)
+def stream_file() -> Iterable[str]:
+    yield from read_file()
+```
+
+## Streaming JSON Lines
+
+Stream JSON objects one per line (JSONL format):
+
+```python
+from collections.abc import AsyncIterable
+import json
+from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class Item(BaseModel):
+    id: int
+    name: str
+
+items = [
+    Item(id=1, name="Plumbus"),
+    Item(id=2, name="Portal Gun"),
+    Item(id=3, name="Meeseeks Box"),
+]
+
+@app.get("/items/stream")
+async def stream_items() -> StreamingResponse:
+    async def generate():
+        for item in items:
+            yield json.dumps(item.model_dump()) + "\n"
+    
+    return StreamingResponse(
+        generate(),
+        media_type="application/x-ndjson"
+    )
+```
+
+<Info>
+The `application/x-ndjson` media type indicates newline-delimited JSON, also known as JSON Lines or JSONL.
+</Info>
+
+## Streaming with Database Queries
+
+Stream database results efficiently:
+
+```python
+from collections.abc import AsyncIterable
+import json
+from fastapi import FastAPI, Depends
+from fastapi.responses import StreamingResponse
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+
+app = FastAPI()
+
+@app.get("/users/stream")
+async def stream_users(db: AsyncSession = Depends(get_db)):
+    async def generate():
+        result = await db.execute(select(User))
+        for user in result.scalars():
+            yield json.dumps({
+                "id": user.id,
+                "name": user.name
+            }) + "\n"
+    
+    return StreamingResponse(
+        generate(),
+        media_type="application/x-ndjson"
+    )
+```
+
+## Progress Updates
+
+Stream progress updates for long-running operations:
+
+```python
+from collections.abc import AsyncIterable
+import asyncio
+import json
+from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
+
+app = FastAPI()
+
+@app.get("/process/stream")
+async def stream_progress() -> StreamingResponse:
+    async def generate():
+        total = 100
+        for i in range(total):
+            await asyncio.sleep(0.1)  # Simulate work
+            progress = {
+                "current": i + 1,
+                "total": total,
+                "percentage": ((i + 1) / total) * 100
+            }
+            yield json.dumps(progress) + "\n"
+    
+    return StreamingResponse(
+        generate(),
+        media_type="application/x-ndjson"
+    )
+```
+
+## Custom Headers and Status Codes
+
+Set custom headers and status codes:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
+
+app = FastAPI()
+
+def generate_data():
+    for i in range(10):
+        yield f"Chunk {i}\n"
+
+@app.get("/data")
+def stream_with_headers():
+    return StreamingResponse(
+        generate_data(),
+        media_type="text/plain",
+        status_code=200,
+        headers={
+            "X-Total-Chunks": "10",
+            "Cache-Control": "no-cache",
+            "X-Content-Type-Options": "nosniff"
+        }
+    )
+```
+
+## Background Processing
+
+Combine streaming with background tasks:
+
+```python
+from fastapi import FastAPI, BackgroundTasks
+from fastapi.responses import StreamingResponse
+
+app = FastAPI()
+
+def cleanup_temp_files():
+    # Clean up temporary files after streaming
+    pass
+
+@app.get("/download")
+def download_file(background_tasks: BackgroundTasks):
+    def file_generator():
+        with open("temp_file.dat", "rb") as f:
+            while chunk := f.read(8192):
+                yield chunk
+    
+    background_tasks.add_task(cleanup_temp_files)
+    
+    return StreamingResponse(
+        file_generator(),
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": "attachment; filename=file.dat"}
+    )
+```
+
+<Note>
+Background tasks run after the response is sent to the client, making them perfect for cleanup operations.
+</Note>
+
+## Testing Streaming Endpoints
+
+Test streaming responses using FastAPI's test client:
+
+```python
+from fastapi.testclient import TestClient
+
+client = TestClient(app)
+
+def test_streaming():
+    with client.stream("GET", "/stream") as response:
+        assert response.status_code == 200
+        chunks = list(response.iter_text())
+        assert len(chunks) > 0
+```
+
+## When to Use Streaming
+
+Use streaming responses when:
+- Sending large files that don't fit in memory
+- Generating content dynamically (e.g., reports, exports)
+- Streaming database query results
+- Providing real-time progress updates
+- Implementing Server-Sent Events (use `EventSourceResponse` instead)
+- Reducing time to first byte (TTFB) for large responses
+
+<Warning>
+Once streaming starts, you cannot modify headers or status codes. Set all headers before returning the `StreamingResponse`.
+</Warning>
+
+## Performance Considerations
+
+- **Chunk size**: Balance between memory usage and network overhead (8KB-64KB is typical)
+- **Async vs sync**: Use async generators for I/O-bound operations
+- **Buffering**: Clients may buffer chunks, affecting perceived streaming
+- **Error handling**: Errors during streaming may result in partial responses
+
+<Tip>
+For static files, use `FileResponse` instead of `StreamingResponse`. It provides better performance with automatic support for range requests, caching, and efficient file serving.
+</Tip>

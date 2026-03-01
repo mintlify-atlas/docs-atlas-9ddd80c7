@@ -1,0 +1,366 @@
+---
+title: Advanced Dependency Patterns
+description: Master advanced dependency injection patterns including async dependencies, dependency caching, generator dependencies, and scoped dependencies in FastAPI.
+---
+
+FastAPI's dependency injection system supports advanced patterns that enable powerful architectural designs. This guide explores async dependencies, caching strategies, generator-based dependencies with cleanup, and dependency scopes.
+
+## Async Dependencies
+
+FastAPI fully supports asynchronous dependencies, which is essential for I/O-bound operations like database queries or API calls.
+
+### Basic Async Dependency
+
+```python
+from fastapi import Depends, FastAPI
+import httpx
+
+app = FastAPI()
+
+async def get_http_client():
+    async with httpx.AsyncClient() as client:
+        yield client
+
+@app.get("/users/{user_id}")
+async def get_user(
+    user_id: int,
+    client: httpx.AsyncClient = Depends(get_http_client)
+):
+    response = await client.get(f"https://api.example.com/users/{user_id}")
+    return response.json()
+```
+
+<Note>
+Async dependencies are only resolved when used in async path operations. In sync path operations, they're executed in a threadpool.
+</Note>
+
+### Mixing Async and Sync Dependencies
+
+You can mix async and sync dependencies freely:
+
+```python
+def get_database() -> Database:
+    return Database()
+
+async def get_current_user(
+    db: Database = Depends(get_database),
+    token: str = Header(...)
+) -> User:
+    # Async operation using sync dependency
+    user = await db.get_user_by_token(token)
+    return user
+
+@app.get("/profile")
+async def read_profile(user: User = Depends(get_current_user)):
+    return user
+```
+
+<Warning>
+Be careful when calling sync dependencies from async code. If a sync dependency performs blocking I/O, it can block the event loop. FastAPI runs sync dependencies in a threadpool to mitigate this.
+</Warning>
+
+## Dependency Caching
+
+By default, FastAPI caches dependency results within a single request. This prevents expensive operations from running multiple times.
+
+### How Caching Works
+
+```python
+from fastapi import Depends, FastAPI
+
+app = FastAPI()
+
+call_count = {"count": 0}
+
+def expensive_dependency():
+    call_count["count"] += 1
+    # Simulate expensive operation
+    return {"result": "data", "calls": call_count["count"]}
+
+def depends_on_expensive(data: dict = Depends(expensive_dependency)):
+    return data
+
+@app.get("/cached")
+def read_cached(
+    # Both parameters use the same dependency
+    data1: dict = Depends(expensive_dependency),
+    data2: dict = Depends(expensive_dependency),
+    data3: dict = Depends(depends_on_expensive)
+):
+    # expensive_dependency is only called ONCE per request
+    assert data1 is data2 is data3
+    return data1  # Will show calls: 1
+```
+
+### Cache Keys
+
+Dependencies are cached based on:
+- The dependency callable itself
+- OAuth2 scopes (if using Security)
+- The dependency scope (function or request)
+
+See `fastapi/dependencies/models.py:63-71` for the cache key implementation.
+
+### Disabling Cache
+
+Disable caching for dependencies that must run every time:
+
+```python
+from fastapi import Depends
+
+def get_timestamp():
+    import time
+    return time.time()
+
+@app.get("/no-cache")
+def read_no_cache(
+    time1: float = Depends(get_timestamp, use_cache=False),
+    time2: float = Depends(get_timestamp, use_cache=False)
+):
+    # get_timestamp is called twice, different values
+    assert time1 != time2
+    return {"time1": time1, "time2": time2}
+```
+
+<Tip>
+Use `use_cache=False` for:
+- Random number generators
+- Timestamp functions
+- Any dependency with side effects that must execute every time
+</Tip>
+
+## Generator Dependencies with Cleanup
+
+Generator dependencies (using `yield`) enable setup and teardown logic, perfect for managing resources.
+
+### Basic Generator Dependency
+
+```python
+from typing import Annotated
+from fastapi import Depends, FastAPI
+
+app = FastAPI()
+
+def get_db():
+    db = Database()
+    try:
+        yield db
+    finally:
+        db.close()
+
+@app.get("/users")
+def read_users(db: Annotated[Database, Depends(get_db)]):
+    return db.query("SELECT * FROM users")
+```
+
+The code after `yield` executes after the response is sent, ensuring proper cleanup even if exceptions occur.
+
+### Async Generator Dependencies
+
+```python
+async def get_async_db():
+    db = await AsyncDatabase.connect()
+    try:
+        yield db
+    finally:
+        await db.disconnect()
+
+@app.get("/async-users")
+async def read_async_users(
+    db: Annotated[AsyncDatabase, Depends(get_async_db)]
+):
+    return await db.fetch_all("SELECT * FROM users")
+```
+
+### Exception Handling in Dependencies
+
+```python
+from fastapi import HTTPException
+
+def get_db_with_transaction():
+    db = Database()
+    db.begin_transaction()
+    try:
+        yield db
+        db.commit()
+    except HTTPException:
+        # HTTPExceptions are caught and re-raised
+        db.rollback()
+        raise
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+```
+
+<Warning>
+Code after `yield` in dependencies runs after the response is sent. You cannot modify the response in the cleanup code.
+</Warning>
+
+## Dependency Scopes
+
+Dependencies can have different scopes that control their lifecycle:
+
+### Function Scope
+
+Function-scoped dependencies are created and destroyed with each path operation function:
+
+```python
+from typing import Annotated
+from fastapi import Depends
+
+def get_function_resource():
+    resource = Resource()
+    yield resource
+    resource.cleanup()
+
+FunctionDep = Annotated[
+    Resource,
+    Depends(get_function_resource, scope="function")
+]
+
+@app.get("/stream")
+def stream_data(resource: FunctionDep):
+    def generate():
+        # Resource is available during streaming
+        for chunk in resource.get_chunks():
+            yield chunk
+        # Resource cleanup happens after streaming completes
+    return StreamingResponse(generate())
+```
+
+<Info>
+`scope="function"` is required when using generator dependencies with streaming responses. The dependency remains active until the generator completes.
+</Info>
+
+### Request Scope
+
+Request-scoped dependencies (the default for generators) are tied to the request lifecycle:
+
+```python
+def get_request_resource():
+    resource = Resource()
+    yield resource
+    resource.cleanup()
+
+RequestDep = Annotated[
+    Resource,
+    Depends(get_request_resource, scope="request")
+]
+```
+
+<Warning>
+Request-scoped dependencies cannot depend on function-scoped dependencies. This would violate the lifecycle hierarchy.
+</Warning>
+
+### Scope Rules
+
+1. Regular (non-generator) dependencies have no scope
+2. Generator dependencies default to `scope="request"`
+3. Function-scoped dependencies can only depend on other function-scoped dependencies
+4. Request-scoped dependencies cannot depend on function-scoped dependencies
+
+See `fastapi/dependencies/utils.py:315-326` for scope validation.
+
+## Advanced Patterns
+
+### Class-Based Dependencies
+
+Create reusable dependency classes:
+
+```python
+from typing import Annotated
+
+class DatabaseSession:
+    def __init__(self, db_url: str = "postgresql://localhost/db"):
+        self.db_url = db_url
+        self.connection = None
+
+    def __call__(self):
+        self.connection = connect(self.db_url)
+        try:
+            yield self.connection
+        finally:
+            self.connection.close()
+
+# Create instance
+get_db = DatabaseSession(db_url="postgresql://prod/db")
+
+@app.get("/users")
+def read_users(db: Annotated[Connection, Depends(get_db)]):
+    return db.execute("SELECT * FROM users")
+```
+
+### Parameterized Dependencies
+
+Create dependency factories:
+
+```python
+from functools import partial
+
+def get_resource_by_type(resource_type: str):
+    def _get_resource():
+        return ResourceFactory.create(resource_type)
+    return _get_resource
+
+# Create specific dependencies
+get_cache = get_resource_by_type("cache")
+get_queue = get_resource_by_type("queue")
+
+@app.get("/data")
+def read_data(
+    cache = Depends(get_cache),
+    queue = Depends(get_queue)
+):
+    return {"cache": cache, "queue": queue}
+```
+
+### Nested Dependencies with Context
+
+```python
+from contextvars import ContextVar
+
+request_id_var: ContextVar[str] = ContextVar("request_id")
+
+def get_request_id(request_id: str = Header(...)):
+    request_id_var.set(request_id)
+    return request_id
+
+def get_logger(request_id: str = Depends(get_request_id)):
+    return Logger(request_id=request_id)
+
+@app.get("/process")
+def process_request(logger: Logger = Depends(get_logger)):
+    logger.info("Processing request")
+    # request_id is available in context
+    return {"request_id": request_id_var.get()}
+```
+
+## Best Practices
+
+<Tip>
+**Use async for I/O-bound operations**: Database queries, API calls, and file operations benefit from async dependencies.
+</Tip>
+
+<Tip>
+**Keep dependencies focused**: Each dependency should have a single responsibility. Compose complex dependencies from simpler ones.
+</Tip>
+
+<Tip>
+**Cache expensive operations**: Let FastAPI's caching work for you. Only disable when necessary.
+</Tip>
+
+<Note>
+**Generator cleanup is guaranteed**: Code after `yield` always executes, even if the path operation raises an exception.
+</Note>
+
+<Warning>
+**Don't modify responses in cleanup**: The response is already sent before cleanup code runs.
+</Warning>
+
+## See Also
+
+- [Dependency Overrides](/advanced/dependency-overrides) - Testing with dependency overrides
+- [Dependencies in path operation decorators](https://fastapi.tiangolo.com/tutorial/dependencies/dependencies-in-path-operation-decorators/) - FastAPI docs
+- [Dependencies with yield](https://fastapi.tiangolo.com/tutorial/dependencies/dependencies-with-yield/) - FastAPI docs

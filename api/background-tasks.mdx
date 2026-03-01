@@ -1,0 +1,62 @@
+---
+title: BackgroundTasks
+description: A collection of background tasks to be executed after sending a response to the client.
+---
+
+## BackgroundTasks
+
+A collection of background tasks that will be called after a response has been sent to the client. This is useful for operations that need to happen after the request but don't need to block the response, such as sending emails, processing data, or logging.
+
+```python
+from fastapi import BackgroundTasks, FastAPI
+
+app = FastAPI()
+
+def write_notification(email: str, message=""):
+    with open("log.txt", mode="w") as email_file:
+        content = f"notification for {email}: {message}"
+        email_file.write(content)
+
+@app.post("/send-notification/{email}")
+async def send_notification(email: str, background_tasks: BackgroundTasks):
+    background_tasks.add_task(write_notification, email, message="some notification")
+    return {"message": "Notification sent in the background"}
+```
+
+## Methods
+
+### add_task
+
+Add a function to be called in the background after the response is sent.
+
+```python
+def add_task(
+    func: Callable,
+    *args,
+    **kwargs
+) -> None
+```
+
+<ParamField path="func" type="Callable" required>
+  The function to call after the response is sent. It can be a regular `def` function or an `async def` function.
+</ParamField>
+
+<ParamField path="*args" type="Any">
+  Positional arguments to pass to the function.
+</ParamField>
+
+<ParamField path="**kwargs" type="Any">
+  Keyword arguments to pass to the function.
+</ParamField>
+
+## Usage Notes
+
+- Background tasks are executed after the response has been sent to the client
+- Both sync (`def`) and async (`async def`) functions are supported
+- Tasks are executed in the order they are added
+- Multiple tasks can be added to the same response
+- Background tasks run in the same process, so they're suitable for lightweight operations
+
+## Learn More
+
+Read more in the [FastAPI docs for Background Tasks](https://fastapi.tiangolo.com/tutorial/background-tasks/).

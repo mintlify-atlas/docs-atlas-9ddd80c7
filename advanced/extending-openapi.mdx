@@ -1,0 +1,280 @@
+---
+title: "Extending OpenAPI"
+description: "Learn how to customize and extend the generated OpenAPI schema in FastAPI by overriding the default openapi() method"
+---
+
+There are cases where you might need to modify the generated OpenAPI schema to add custom metadata, vendor extensions, or modify the structure to meet specific requirements.
+
+## The Normal Process
+
+Understanding how FastAPI generates OpenAPI schemas helps you customize them effectively.
+
+### How OpenAPI Generation Works
+
+A `FastAPI` application instance has an `.openapi()` method that returns the OpenAPI schema:
+
+1. When the application starts, a path operation for `/openapi.json` is registered
+2. This endpoint returns a JSON response from the `.openapi()` method
+3. The method checks the `.openapi_schema` property and returns it if available
+4. If not available, it generates the schema using `fastapi.openapi.utils.get_openapi()`
+
+<Info>
+The `.openapi_schema` property acts as a cache to avoid regenerating the schema on every request.
+</Info>
+
+### The get_openapi() Function
+
+The `get_openapi()` utility function accepts these parameters:
+
+- `title`: The OpenAPI title shown in the docs
+- `version`: Your API version (e.g., `2.5.0`)
+- `openapi_version`: The OpenAPI specification version (default: `3.1.0`)
+- `summary`: A short summary of the API
+- `description`: Detailed API description (supports Markdown)
+- `routes`: List of registered path operations from `app.routes`
+- `webhooks`: Webhook definitions
+- `tags`: Tag metadata for organizing endpoints
+- `servers`: Server information
+- `terms_of_service`: Terms of service URL
+- `contact`: Contact information
+- `license_info`: License details
+
+## Customizing the OpenAPI Schema
+
+You can override the default OpenAPI generation to add custom extensions or modify the schema.
+
+### Basic FastAPI Application
+
+Start with a standard FastAPI application:
+
+```python
+from fastapi import FastAPI
+from fastapi.openapi.utils import get_openapi
+
+app = FastAPI()
+
+@app.get("/items/")
+async def read_items():
+    return [{"name": "Foo"}]
+```
+
+### Create a custom_openapi() Function
+
+Define a function that generates and customizes the OpenAPI schema:
+
+```python
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    
+    openapi_schema = get_openapi(
+        title="Custom title",
+        version="2.5.0",
+        summary="This is a very custom OpenAPI schema",
+        description="Here's a longer description of the custom **OpenAPI** schema",
+        routes=app.routes,
+    )
+    
+    # Add custom extensions or modifications
+    openapi_schema["info"]["x-logo"] = {
+        "url": "https://fastapi.tiangolo.com/img/logo-margin/logo-teal.png"
+    }
+    
+    # Cache the schema
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+```
+
+<Note>
+The `if app.openapi_schema:` check ensures the schema is only generated once and then cached for subsequent requests.
+</Note>
+
+### Override the openapi() Method
+
+Replace the default method with your custom function:
+
+```python
+app.openapi = custom_openapi
+```
+
+## Common Customization Examples
+
+### Adding Vendor Extensions
+
+Many tools support vendor-specific extensions (prefixed with `x-`):
+
+```python
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    
+    openapi_schema = get_openapi(
+        title="My API",
+        version="1.0.0",
+        routes=app.routes,
+    )
+    
+    # Add ReDoc logo extension
+    openapi_schema["info"]["x-logo"] = {
+        "url": "https://example.com/logo.png",
+        "altText": "My API Logo"
+    }
+    
+    # Add custom tags metadata
+    openapi_schema["info"]["x-custom-metadata"] = {
+        "team": "API Team",
+        "contact": "api@example.com"
+    }
+    
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+app.openapi = custom_openapi
+```
+
+### Modifying Security Schemes
+
+Customize authentication documentation:
+
+```python
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    
+    openapi_schema = get_openapi(
+        title="Secure API",
+        version="1.0.0",
+        routes=app.routes,
+    )
+    
+    # Add custom security scheme descriptions
+    if "components" in openapi_schema:
+        if "securitySchemes" in openapi_schema["components"]:
+            for scheme in openapi_schema["components"]["securitySchemes"].values():
+                scheme["x-custom-info"] = "Additional auth information"
+    
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+app.openapi = custom_openapi
+```
+
+### Adding Custom Response Examples
+
+Enhance API documentation with additional examples:
+
+```python
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    
+    openapi_schema = get_openapi(
+        title="Example API",
+        version="1.0.0",
+        routes=app.routes,
+    )
+    
+    # Add examples to specific endpoints
+    if "/items/" in openapi_schema["paths"]:
+        openapi_schema["paths"]["/items/"]["get"]["responses"]["200"]["content"]["application/json"]["examples"] = {
+            "normal": {
+                "summary": "A normal example",
+                "value": [{"name": "Foo", "price": 35.4}]
+            },
+            "empty": {
+                "summary": "Empty response",
+                "value": []
+            }
+        }
+    
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+app.openapi = custom_openapi
+```
+
+## Viewing Your Custom Schema
+
+After customizing the OpenAPI schema:
+
+1. Start your application with `uvicorn main:app --reload`
+2. Visit `/docs` to see your changes in Swagger UI
+3. Visit `/redoc` to see your changes in ReDoc
+4. Access `/openapi.json` to view the raw schema
+
+<Warning>
+Be careful when modifying the OpenAPI schema structure. Invalid modifications may cause documentation UIs to fail or display incorrectly.
+</Warning>
+
+## Best Practices
+
+<Tip>
+**Always cache the schema**: Use the `.openapi_schema` property to avoid regenerating the schema on every request.
+</Tip>
+
+- **Test thoroughly**: Validate your custom schema using OpenAPI validators
+- **Document extensions**: Add comments explaining custom vendor extensions
+- **Preserve structure**: Don't remove required OpenAPI fields
+- **Use type checking**: Leverage Python type hints when modifying the schema
+
+## Complete Example
+
+Here's a full example combining multiple customizations:
+
+```python
+from fastapi import FastAPI
+from fastapi.openapi.utils import get_openapi
+
+app = FastAPI()
+
+@app.get("/items/")
+async def read_items():
+    return [{"name": "Foo"}]
+
+@app.get("/users/")
+async def read_users():
+    return [{"username": "john"}]
+
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    
+    openapi_schema = get_openapi(
+        title="My Custom API",
+        version="2.5.0",
+        summary="A highly customized API",
+        description="This API has custom **OpenAPI** extensions and metadata",
+        routes=app.routes,
+    )
+    
+    # Add logo for ReDoc
+    openapi_schema["info"]["x-logo"] = {
+        "url": "https://fastapi.tiangolo.com/img/logo-margin/logo-teal.png",
+        "altText": "FastAPI Logo"
+    }
+    
+    # Add custom contact info
+    openapi_schema["info"]["x-support"] = {
+        "email": "support@example.com",
+        "url": "https://example.com/support"
+    }
+    
+    # Add custom tags
+    openapi_schema["x-tagGroups"] = [
+        {
+            "name": "Resources",
+            "tags": ["items", "users"]
+        }
+    ]
+    
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+app.openapi = custom_openapi
+```
+
+## Related Topics
+
+- [OpenAPI Callbacks](/advanced/openapi-callbacks) - Document callback requests
+- [OpenAPI Webhooks](/advanced/openapi-webhooks) - Document webhook endpoints
+- [Conditional OpenAPI](/advanced/conditional-openapi) - Control OpenAPI availability

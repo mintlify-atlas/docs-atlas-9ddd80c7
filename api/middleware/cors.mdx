@@ -1,0 +1,88 @@
+---
+title: CORSMiddleware
+description: Configure Cross-Origin Resource Sharing (CORS) for your FastAPI application
+---
+
+# CORSMiddleware
+
+The `CORSMiddleware` allows you to configure Cross-Origin Resource Sharing (CORS) for your FastAPI application, enabling browsers to make cross-origin requests from frontend applications.
+
+## Usage
+
+```python
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://example.com"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+```
+
+## Parameters
+
+<ParamField path="allow_origins" type="list[str]" required>
+  A list of origins that are allowed to make cross-origin requests. Use `["*"]` to allow any origin. For example: `["https://example.com", "https://app.example.com"]`.
+</ParamField>
+
+<ParamField path="allow_origin_regex" type="str | None" default="None">
+  A regex pattern string to match against origins. For example: `https://.*\.example\.com`.
+</ParamField>
+
+<ParamField path="allow_methods" type="list[str]" default="['GET']">
+  A list of HTTP methods that are allowed for cross-origin requests. Use `["*"]` to allow all standard methods. Default is `["GET"]`.
+</ParamField>
+
+<ParamField path="allow_headers" type="list[str]" default="[]">
+  A list of HTTP request headers that are allowed for cross-origin requests. Use `["*"]` to allow all headers. The `Accept`, `Accept-Language`, `Content-Language`, and `Content-Type` headers are always allowed for CORS requests.
+</ParamField>
+
+<ParamField path="allow_credentials" type="bool" default="False">
+  Indicates whether cookies should be supported for cross-origin requests. If set to `True`, the `allow_origins` cannot be `["*"]`, and must specify origins explicitly.
+</ParamField>
+
+<ParamField path="expose_headers" type="list[str]" default="[]">
+  A list of HTTP response headers that should be made accessible to the browser. By default, only simple response headers are exposed.
+</ParamField>
+
+<ParamField path="max_age" type="int" default="600">
+  The maximum time in seconds that browsers can cache CORS responses. Default is 600 seconds (10 minutes).
+</ParamField>
+
+## Example with Multiple Origins
+
+```python
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI()
+
+origins = [
+    "http://localhost:3000",
+    "http://localhost:8080",
+    "https://example.com",
+    "https://www.example.com",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["X-Custom-Header"],
+    max_age=3600,
+)
+```
+
+## Security Considerations
+
+- Avoid using `allow_origins=["*"]` in production unless your API is truly public
+- When using `allow_credentials=True`, you must specify explicit origins
+- Use `allow_origin_regex` carefully to avoid overly permissive patterns
+- Consider limiting `allow_methods` and `allow_headers` to only what your application needs

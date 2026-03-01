@@ -1,0 +1,507 @@
+---
+title: "OpenAPI Webhooks"
+description: "Document webhook events that your FastAPI application sends to user-defined endpoints using OpenAPI 3.1.0 webhooks"
+---
+
+Webhooks allow your API to notify users when specific events occur by sending HTTP requests to URLs they provide. OpenAPI 3.1.0+ includes native webhook documentation support.
+
+## Understanding Webhooks
+
+Webhooks reverse the typical API flow:
+
+**Normal API**: User sends request → Your API responds
+
+**Webhooks**: Event occurs → Your API sends request → User's API responds
+
+<Info>
+Webhooks are event-driven notifications where your application pushes data to user-defined endpoints.
+</Info>
+
+## Webhooks vs Callbacks
+
+While similar, webhooks and callbacks have key differences:
+
+| Feature | Webhooks | Callbacks |
+|---------|----------|----------|
+| **Trigger** | Independent events | Specific API request |
+| **Association** | Not tied to specific endpoints | Tied to path operations |
+| **Registration** | User-defined URLs (dashboard, config) | Passed as request parameters |
+| **Use case** | General notifications | Request-specific responses |
+
+<Note>
+Use callbacks when notifying about a specific request. Use webhooks for general event notifications.
+</Note>
+
+## How Webhooks Work
+
+### The Webhook Flow
+
+1. **User registers**: User provides webhook URLs (via dashboard, API, or config)
+2. **Event occurs**: Something happens in your system (e.g., new subscription, payment completed)
+3. **Your app sends request**: Your API makes HTTP POST request to user's URL
+4. **User's app processes**: User's endpoint receives and processes the webhook
+
+### Implementation Responsibilities
+
+**You implement**:
+- Webhook registration system
+- Event triggering logic
+- HTTP request sending code
+- Retry and failure handling
+
+**You document**:
+- Event types and names
+- Request payload structures
+- Expected response formats
+
+## Documenting Webhooks in FastAPI
+
+FastAPI provides the `app.webhooks` attribute to document webhook events.
+
+### Basic Webhook Documentation
+
+```python
+from datetime import datetime
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class Subscription(BaseModel):
+    username: str
+    monthly_fee: float
+    start_date: datetime
+
+@app.webhooks.post("new-subscription")
+def new_subscription(body: Subscription):
+    """
+    When a new user subscribes to your service we'll send you a POST request with this
+    data to the URL that you register for the event `new-subscription` in the dashboard.
+    """
+
+@app.get("/users/")
+def read_users():
+    return ["Rick", "Morty"]
+```
+
+<Tip>
+The webhook "path" (e.g., `"new-subscription"`) is just an identifier/event name, not an actual URL path. Users define the actual URLs.
+</Tip>
+
+### Key Points
+
+- `app.webhooks` is an `APIRouter` instance
+- Webhook names identify events, not URL paths
+- Users configure actual webhook URLs separately
+- Documentation shows payload structure, not implementation
+
+## Multiple Webhook Events
+
+Document different events your API might trigger:
+
+```python
+from fastapi import FastAPI
+from pydantic import BaseModel
+from datetime import datetime
+
+app = FastAPI()
+
+class Subscription(BaseModel):
+    username: str
+    monthly_fee: float
+    start_date: datetime
+
+class SubscriptionCancelled(BaseModel):
+    username: str
+    cancellation_date: datetime
+    reason: str | None = None
+
+class Payment(BaseModel):
+    username: str
+    amount: float
+    payment_date: datetime
+    status: str
+
+@app.webhooks.post("new-subscription")
+def new_subscription(body: Subscription):
+    """
+    Triggered when a new user subscribes to your service.
+    """
+
+@app.webhooks.post("subscription-cancelled")
+def subscription_cancelled(body: SubscriptionCancelled):
+    """
+    Triggered when a user cancels their subscription.
+    """
+
+@app.webhooks.post("payment-received")
+def payment_received(body: Payment):
+    """
+    Triggered when a payment is successfully processed.
+    """
+```
+
+## Webhook with Response Models
+
+Document expected responses from user endpoints:
+
+```python
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class OrderCreated(BaseModel):
+    order_id: str
+    customer_id: str
+    total_amount: float
+
+class WebhookResponse(BaseModel):
+    received: bool
+    processed: bool
+    message: str | None = None
+
+@app.webhooks.post("order-created", response_model=WebhookResponse)
+def order_created(body: OrderCreated):
+    """
+    Sent when a new order is created.
+    
+    Your endpoint should return a WebhookResponse to acknowledge receipt.
+    """
+```
+
+<Info>
+Defining response models helps users understand what your API expects in return.
+</Info>
+
+## Implementing Webhook Delivery
+
+While FastAPI documents webhooks, you implement the delivery mechanism:
+
+```python
+import httpx
+from fastapi import FastAPI, BackgroundTasks
+from pydantic import BaseModel, HttpUrl
+from datetime import datetime
+
+app = FastAPI()
+
+class Subscription(BaseModel):
+    username: str
+    monthly_fee: float
+    start_date: datetime
+
+# Webhook documentation
+@app.webhooks.post("new-subscription")
+def new_subscription(body: Subscription):
+    """
+    Triggered when a new user subscribes.
+    """
+
+# Webhook delivery implementation
+class WebhookManager:
+    def __init__(self):
+        self.webhooks = {}  # In production, use database
+    
+    def register_webhook(self, event: str, url: str):
+        """Register a webhook URL for an event"""
+        if event not in self.webhooks:
+            self.webhooks[event] = []
+        self.webhooks[event].append(url)
+    
+    async def trigger_webhook(self, event: str, data: dict):
+        """Send webhook to all registered URLs"""
+        urls = self.webhooks.get(event, [])
+        async with httpx.AsyncClient() as client:
+            for url in urls:
+                try:
+                    response = await client.post(
+                        url,
+                        json=data,
+                        timeout=10.0,
+                        headers={"X-Webhook-Event": event}
+                    )
+                    response.raise_for_status()
+                except httpx.HTTPError as e:
+                    # Log failure, implement retry logic
+                    print(f"Webhook delivery failed to {url}: {e}")
+
+webhook_manager = WebhookManager()
+
+# Endpoint to register webhooks
+@app.post("/webhooks/register")
+def register_webhook(event: str, url: HttpUrl):
+    webhook_manager.register_webhook(event, str(url))
+    return {"message": "Webhook registered", "event": event}
+
+# Endpoint that triggers webhook
+@app.post("/subscriptions/")
+async def create_subscription(
+    subscription: Subscription,
+    background_tasks: BackgroundTasks
+):
+    # Create subscription in database...
+    
+    # Trigger webhook in background
+    background_tasks.add_task(
+        webhook_manager.trigger_webhook,
+        "new-subscription",
+        subscription.model_dump()
+    )
+    
+    return {"message": "Subscription created"}
+```
+
+<Warning>
+This example uses in-memory storage. In production, store webhook URLs in a database with proper security measures.
+</Warning>
+
+## Advanced Webhook Patterns
+
+### Webhook with Retry Logic
+
+```python
+import httpx
+import asyncio
+from typing import Dict, Any
+
+async def send_webhook_with_retry(
+    url: str,
+    event: str,
+    payload: Dict[str, Any],
+    max_retries: int = 3
+):
+    """Send webhook with exponential backoff retry"""
+    async with httpx.AsyncClient() as client:
+        for attempt in range(max_retries):
+            try:
+                response = await client.post(
+                    url,
+                    json=payload,
+                    timeout=10.0,
+                    headers={
+                        "X-Webhook-Event": event,
+                        "X-Webhook-Attempt": str(attempt + 1)
+                    }
+                )
+                response.raise_for_status()
+                return True
+            except httpx.HTTPError:
+                if attempt < max_retries - 1:
+                    # Exponential backoff: 2^attempt seconds
+                    await asyncio.sleep(2 ** attempt)
+                else:
+                    # Log final failure
+                    return False
+```
+
+### Webhook Signatures for Security
+
+```python
+import hmac
+import hashlib
+import json
+from fastapi import FastAPI, Header, HTTPException
+from pydantic import BaseModel
+
+app = FastAPI()
+WEBHOOK_SECRET = "your-secret-key"  # Store securely
+
+def generate_signature(payload: dict, secret: str) -> str:
+    """Generate HMAC signature for webhook payload"""
+    message = json.dumps(payload, sort_keys=True)
+    signature = hmac.new(
+        secret.encode(),
+        message.encode(),
+        hashlib.sha256
+    ).hexdigest()
+    return signature
+
+async def send_secure_webhook(url: str, event: str, payload: dict):
+    """Send webhook with signature"""
+    signature = generate_signature(payload, WEBHOOK_SECRET)
+    
+    async with httpx.AsyncClient() as client:
+        await client.post(
+            url,
+            json=payload,
+            headers={
+                "X-Webhook-Event": event,
+                "X-Webhook-Signature": signature
+            }
+        )
+
+class Subscription(BaseModel):
+    username: str
+
+@app.webhooks.post("new-subscription")
+def new_subscription(body: Subscription):
+    """
+    Triggered when a new subscription is created.
+    
+    The webhook includes an X-Webhook-Signature header that you should verify
+    to ensure the request came from our service.
+    """
+```
+
+<Tip>
+Always implement webhook signatures in production to prevent unauthorized webhook injection.
+</Tip>
+
+## Viewing Webhook Documentation
+
+Your webhook documentation appears in the OpenAPI docs:
+
+1. Start your app: `uvicorn main:app --reload`
+2. Visit `/docs` or `/redoc`
+3. Look for the "Webhooks" section
+
+Users can see:
+- Event names
+- Payload structures
+- Expected responses
+- Event descriptions
+
+## OpenAPI Requirements
+
+<Note>
+Webhooks require OpenAPI 3.1.0+, supported in FastAPI 0.99.0+. Earlier versions don't support webhook documentation.
+</Note>
+
+Check your FastAPI version:
+```bash
+pip show fastapi
+```
+
+Upgrade if needed:
+```bash
+pip install --upgrade fastapi
+```
+
+## Best Practices
+
+### Design
+- **Clear event names**: Use descriptive names like `order-created`, not `event1`
+- **Consistent payloads**: Keep webhook payload structures consistent across versions
+- **Include metadata**: Add timestamps, event IDs, and version information
+
+### Implementation
+- **Use background tasks**: Never block API responses while sending webhooks
+- **Implement retries**: Handle transient failures with exponential backoff
+- **Add timeouts**: Set reasonable timeouts (5-10 seconds)
+- **Sign webhooks**: Use HMAC signatures for security
+- **Version your webhooks**: Allow users to specify webhook format versions
+
+### User Experience
+- **Provide testing tools**: Offer webhook testing endpoints or tools
+- **Document security**: Explain signature verification clearly
+- **Show examples**: Provide complete request/response examples
+- **Log deliveries**: Let users see webhook delivery history and failures
+
+## Complete Production Example
+
+```python
+from datetime import datetime
+from fastapi import FastAPI, BackgroundTasks
+from pydantic import BaseModel, HttpUrl
+import httpx
+import hmac
+import hashlib
+import json
+
+app = FastAPI(
+    title="Webhook Demo API",
+    version="1.0.0"
+)
+
+WEBHOOK_SECRET = "your-secret-key-here"
+
+class Subscription(BaseModel):
+    username: str
+    monthly_fee: float
+    start_date: datetime
+
+class WebhookConfig(BaseModel):
+    event: str
+    url: HttpUrl
+
+# Document the webhook
+@app.webhooks.post("new-subscription")
+def new_subscription(body: Subscription):
+    """
+    Triggered when a new user subscribes.
+    
+    The webhook includes:
+    - X-Webhook-Event: Event name
+    - X-Webhook-Signature: HMAC-SHA256 signature
+    - X-Webhook-Timestamp: Unix timestamp
+    
+    Verify the signature to ensure authenticity.
+    """
+
+# Webhook delivery
+class WebhookService:
+    def __init__(self):
+        self.webhooks = {}  # Use database in production
+    
+    def sign_payload(self, payload: dict) -> str:
+        message = json.dumps(payload, sort_keys=True)
+        return hmac.new(
+            WEBHOOK_SECRET.encode(),
+            message.encode(),
+            hashlib.sha256
+        ).hexdigest()
+    
+    async def deliver(self, event: str, payload: dict):
+        urls = self.webhooks.get(event, [])
+        timestamp = int(datetime.now().timestamp())
+        
+        async with httpx.AsyncClient() as client:
+            for url in urls:
+                signature = self.sign_payload(payload)
+                try:
+                    await client.post(
+                        url,
+                        json=payload,
+                        headers={
+                            "X-Webhook-Event": event,
+                            "X-Webhook-Signature": signature,
+                            "X-Webhook-Timestamp": str(timestamp)
+                        },
+                        timeout=10.0
+                    )
+                except httpx.HTTPError:
+                    pass  # Implement proper error handling
+
+webhook_service = WebhookService()
+
+@app.post("/webhooks/configure")
+def configure_webhook(config: WebhookConfig):
+    """Register a webhook URL for an event"""
+    if config.event not in webhook_service.webhooks:
+        webhook_service.webhooks[config.event] = []
+    webhook_service.webhooks[config.event].append(str(config.url))
+    return {"status": "configured"}
+
+@app.post("/subscriptions/")
+async def create_subscription(
+    subscription: Subscription,
+    background_tasks: BackgroundTasks
+):
+    """Create subscription and trigger webhook"""
+    # Save to database...
+    
+    background_tasks.add_task(
+        webhook_service.deliver,
+        "new-subscription",
+        subscription.model_dump(mode="json")
+    )
+    
+    return {"status": "created"}
+```
+
+## Related Topics
+
+- [OpenAPI Callbacks](/advanced/openapi-callbacks) - Document request-specific callbacks
+- [Background Tasks](https://fastapi.tiangolo.com/tutorial/background-tasks/) - Execute webhooks asynchronously
+- [Extending OpenAPI](/advanced/extending-openapi) - Customize OpenAPI schema

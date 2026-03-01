@@ -1,0 +1,373 @@
+---
+title: 'Sub-Dependencies'
+description: 'Learn how to create complex dependency graphs by composing dependencies that depend on other dependencies in FastAPI'
+---
+
+# Sub-Dependencies
+
+One of the most powerful features of FastAPI's dependency injection system is the ability to create **sub-dependencies** - dependencies that themselves have dependencies. This allows you to build complex, modular systems with clean separation of concerns.
+
+## What are Sub-Dependencies?
+
+A sub-dependency is simply a dependency that uses `Depends()` in its own parameters. FastAPI automatically resolves the entire dependency tree, executing everything in the correct order.
+
+<Info>
+FastAPI builds a complete dependency graph internally using the `Dependant` model, which tracks all sub-dependencies through its `dependencies` field (see `fastapi/dependencies/models.py:38`).
+</Info>
+
+## Basic Sub-Dependency Example
+
+Here's a simple example from the FastAPI source:
+
+```python
+from fastapi import Cookie, Depends, FastAPI
+
+app = FastAPI()
+
+
+def query_extractor(q: str | None = None):
+    return q
+
+
+def query_or_cookie_extractor(
+    q: str = Depends(query_extractor),
+    last_query: str | None = Cookie(default=None)
+):
+    if not q:
+        return last_query
+    return q
+
+
+@app.get("/items/")
+async def read_query(query_or_default: str = Depends(query_or_cookie_extractor)):
+    return {"q_or_cookie": query_or_default}
+```
+
+### How It Works
+
+<Steps>
+
+<Step title="Request arrives">
+A request comes in to `/items/?q=test`
+</Step>
+
+<Step title="FastAPI resolves dependencies">
+FastAPI sees that `read_query` depends on `query_or_cookie_extractor`
+</Step>
+
+<Step title="Sub-dependency is resolved first">
+Before calling `query_or_cookie_extractor`, FastAPI sees it depends on `query_extractor` and calls that first
+</Step>
+
+<Step title="Values flow up the chain">
+The result from `query_extractor` is passed to `query_or_cookie_extractor`, and its result is passed to `read_query`
+</Step>
+
+</Steps>
+
+## Multiple Levels of Dependencies
+
+You can nest dependencies as deep as needed:
+
+```python
+from fastapi import Depends, FastAPI, HTTPException
+
+app = FastAPI()
+
+
+def get_database():
+    # Simulate database connection
+    return {"connection": "active"}
+
+
+def get_session(db = Depends(get_database)):
+    # Create a session using the database
+    return {"session": "session_123", "db": db}
+
+
+def get_current_user(session = Depends(get_session)):
+    # Get user from session
+    user = {"username": "john", "session": session}
+    return user
+
+
+def get_user_permissions(user = Depends(get_current_user)):
+    # Get permissions for the user
+    return {"user": user, "permissions": ["read", "write"]}
+
+
+@app.get("/protected/")
+async def protected_route(perms = Depends(get_user_permissions)):
+    return {
+        "message": "Access granted",
+        "user": perms["user"]["username"],
+        "permissions": perms["permissions"]
+    }
+```
+
+### Dependency Graph
+
+For the above example, FastAPI creates this dependency graph:
+
+```
+protected_route
+    └── get_user_permissions
+            └── get_current_user
+                    └── get_session
+                            └── get_database
+```
+
+Execution order: `get_database` → `get_session` → `get_current_user` → `get_user_permissions` → `protected_route`
+
+## Sub-Dependencies with Multiple Parameters
+
+A dependency can have multiple sub-dependencies:
+
+```python
+from fastapi import Depends, Header, Query
+
+
+def get_token(authorization: str = Header()):
+    return authorization.replace("Bearer ", "")
+
+
+def get_user_id(x_user_id: str = Header()):
+    return x_user_id
+
+
+def verify_access(
+    token: str = Depends(get_token),
+    user_id: str = Depends(get_user_id),
+    resource_id: str = Query()
+):
+    # Verify that the token allows this user to access this resource
+    if not is_authorized(token, user_id, resource_id):
+        raise HTTPException(status_code=403)
+    return {"user_id": user_id, "resource_id": resource_id}
+
+
+@app.get("/resources/")
+async def get_resource(access = Depends(verify_access)):
+    return {"data": "sensitive data", "access": access}
+```
+
+## Dependency Caching
+
+By default, FastAPI caches dependency results within a single request:
+
+```python
+call_count = 0
+
+def expensive_operation():
+    global call_count
+    call_count += 1
+    # Expensive computation here
+    return {"result": "computed", "call_count": call_count}
+
+
+def dependency_a(data = Depends(expensive_operation)):
+    return {"source": "dep_a", "data": data}
+
+
+def dependency_b(data = Depends(expensive_operation)):
+    return {"source": "dep_b", "data": data}
+
+
+@app.get("/test/")
+async def test_caching(
+    result_a = Depends(dependency_a),
+    result_b = Depends(dependency_b)
+):
+    # expensive_operation() is only called ONCE per request
+    return {"a": result_a, "b": result_b}
+```
+
+<Note>
+The `call_count` will only increment once per request, even though `expensive_operation` is used in two different dependencies. This is controlled by the `use_cache=True` parameter in the `Depends` class.
+</Note>
+
+### Disabling Cache
+
+If you need to disable caching for a specific dependency:
+
+```python
+def get_timestamp():
+    return datetime.now().isoformat()
+
+
+@app.get("/timestamps/")
+async def multiple_timestamps(
+    ts1 = Depends(get_timestamp, use_cache=False),
+    ts2 = Depends(get_timestamp, use_cache=False)
+):
+    # Each call gets a different timestamp
+    return {"timestamp_1": ts1, "timestamp_2": ts2}
+```
+
+## Dependencies with Yield (Context Managers)
+
+Sub-dependencies can use `yield` to provide cleanup logic. This is especially useful for database sessions:
+
+```python
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+def get_current_user(db = Depends(get_db), token: str = Header()):
+    user = db.query(User).filter(User.token == token).first()
+    if not user:
+        raise HTTPException(status_code=401)
+    return user
+
+
+@app.get("/me/")
+async def read_user_me(current_user = Depends(get_current_user)):
+    return current_user
+```
+
+### Execution Flow with Yield
+
+<Steps>
+
+<Step title="Setup phase (before yield)">
+All dependencies execute their setup code (before `yield`) in dependency order:
+1. `get_db` creates database session
+2. `get_current_user` gets user from database
+3. Path operation executes
+</Step>
+
+<Step title="Cleanup phase (after yield)">
+After the response is sent, cleanup code (after `yield`) executes in **reverse** order:
+1. `get_current_user` cleanup (if any)
+2. `get_db` closes database connection
+</Step>
+
+</Steps>
+
+## Complex Example: Chained Dependencies
+
+Here's a real-world example with multiple dependency levels:
+
+```python
+from fastapi import Depends
+
+
+async def dependency_a():
+    dep_a = {"name": "dep_a", "value": "A"}
+    try:
+        yield dep_a
+    finally:
+        # Cleanup A
+        print("Closing dependency A")
+
+
+async def dependency_b(dep_a = Depends(dependency_a)):
+    dep_b = {"name": "dep_b", "value": "B", "parent": dep_a}
+    try:
+        yield dep_b
+    finally:
+        # Cleanup B (happens before cleanup A)
+        print("Closing dependency B")
+
+
+async def dependency_c(dep_b = Depends(dependency_b)):
+    dep_c = {"name": "dep_c", "value": "C", "parent": dep_b}
+    try:
+        yield dep_c
+    finally:
+        # Cleanup C (happens first)
+        print("Closing dependency C")
+```
+
+This example is directly from the FastAPI source at `docs_src/dependencies/tutorial008_py310.py`. The cleanup order is:
+
+```
+1. Setup: A → B → C → Path Operation
+2. Cleanup: Path Operation → C → B → A
+```
+
+<Warning>
+Always ensure cleanup code in `finally` blocks doesn't depend on resources that might already be cleaned up. The reverse execution order helps with this, but be mindful of shared state.
+</Warning>
+
+## Handling Exceptions in Sub-Dependencies
+
+You can catch exceptions from sub-dependencies:
+
+```python
+from fastapi import Depends, HTTPException
+
+
+class OwnerError(Exception):
+    pass
+
+
+def get_username():
+    try:
+        yield "Rick"
+    except OwnerError as e:
+        raise HTTPException(status_code=400, detail=f"Owner error: {e}")
+
+
+@app.get("/items/{item_id}")
+def get_item(item_id: str, username: str = Depends(get_username)):
+    if item_id not in data:
+        raise HTTPException(status_code=404, detail="Item not found")
+    item = data[item_id]
+    if item["owner"] != username:
+        raise OwnerError(username)
+    return item
+```
+
+This pattern (from `docs_src/dependencies/tutorial008b_py310.py`) allows dependencies to handle exceptions raised during the request processing.
+
+## Best Practices
+
+<Steps>
+
+<Step title="Keep dependencies focused">
+Each dependency should have a single, clear responsibility. This makes them easier to test and reuse.
+</Step>
+
+<Step title="Use meaningful names">
+Name your dependencies based on what they provide or verify (e.g., `get_current_user`, `verify_permissions`).
+</Step>
+
+<Step title="Consider the dependency tree">
+Think about which dependencies are truly independent and which should be sub-dependencies. This affects caching and execution order.
+</Step>
+
+<Step title="Use yield for resource management">
+Always use `yield` with `try/finally` for dependencies that manage resources like database connections.
+</Step>
+
+<Step title="Be mindful of caching">
+Remember that dependencies are cached by default. Disable caching with `use_cache=False` when you need fresh values.
+</Step>
+
+</Steps>
+
+## The Dependant Model Structure
+
+Internally, FastAPI tracks sub-dependencies using the `Dependant` dataclass:
+
+```python
+@dataclass
+class Dependant:
+    dependencies: list["Dependant"] = field(default_factory=list)
+    # ... other fields
+```
+
+Each `Dependant` can have its own list of `Dependant` objects, creating a tree structure that FastAPI traverses to resolve all dependencies.
+
+## Next Steps
+
+Now that you understand sub-dependencies, explore:
+
+- Using dependencies at the path operation decorator level for side effects
+- Setting up global dependencies that apply to your entire application
+- Advanced patterns like dependency override for testing

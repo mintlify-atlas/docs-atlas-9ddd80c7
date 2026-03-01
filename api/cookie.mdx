@@ -1,0 +1,272 @@
+---
+title: Cookie
+description: API reference for the FastAPI Cookie parameter function
+---
+
+# Cookie
+
+Declare a cookie parameter for a path operation. Cookie parameters are extracted from HTTP request cookies.
+
+```python
+from typing import Annotated
+from fastapi import FastAPI, Cookie
+
+app = FastAPI()
+
+@app.get("/items/")
+async def read_items(
+    session_id: Annotated[str | None, Cookie()] = None
+):
+    return {"session_id": session_id}
+```
+
+## Signature
+
+```python
+def Cookie(
+    default: Any = Undefined,
+    *,
+    alias: str | None = None,
+    title: str | None = None,
+    description: str | None = None,
+    gt: float | None = None,
+    ge: float | None = None,
+    lt: float | None = None,
+    le: float | None = None,
+    min_length: int | None = None,
+    max_length: int | None = None,
+    pattern: str | None = None,
+    examples: list[Any] | None = None,
+    deprecated: bool | str | None = None,
+    include_in_schema: bool = True,
+    json_schema_extra: dict[str, Any] | None = None,
+) -> Any
+```
+
+## Parameters
+
+<ParamField path="default" type="Any" default="Undefined">
+  Default value if the parameter field is not set.
+</ParamField>
+
+<ParamField path="alias" type="str | None" default="None">
+  An alternative name for the parameter field. This will be used to extract the data and for the generated OpenAPI.
+</ParamField>
+
+<ParamField path="title" type="str | None" default="None">
+  Human-readable title for the parameter.
+</ParamField>
+
+<ParamField path="description" type="str | None" default="None">
+  Human-readable description for the parameter.
+</ParamField>
+
+<ParamField path="gt" type="float | None" default="None">
+  Greater than validation. If set, the value must be greater than this. Only applicable to numbers.
+</ParamField>
+
+<ParamField path="ge" type="float | None" default="None">
+  Greater than or equal validation. If set, the value must be greater than or equal to this. Only applicable to numbers.
+</ParamField>
+
+<ParamField path="lt" type="float | None" default="None">
+  Less than validation. If set, the value must be less than this. Only applicable to numbers.
+</ParamField>
+
+<ParamField path="le" type="float | None" default="None">
+  Less than or equal validation. If set, the value must be less than or equal to this. Only applicable to numbers.
+</ParamField>
+
+<ParamField path="min_length" type="int | None" default="None">
+  Minimum length for strings.
+</ParamField>
+
+<ParamField path="max_length" type="int | None" default="None">
+  Maximum length for strings.
+</ParamField>
+
+<ParamField path="pattern" type="str | None" default="None">
+  RegEx pattern for strings.
+</ParamField>
+
+<ParamField path="discriminator" type="str | None" default="None">
+  Parameter field name for discriminating the type in a tagged union.
+</ParamField>
+
+<ParamField path="strict" type="bool | None" default="None">
+  If True, strict validation is applied to the field.
+</ParamField>
+
+<ParamField path="multiple_of" type="float | None" default="None">
+  Value must be a multiple of this. Only applicable to numbers.
+</ParamField>
+
+<ParamField path="allow_inf_nan" type="bool | None" default="None">
+  Allow `inf`, `-inf`, `nan`. Only applicable to numbers.
+</ParamField>
+
+<ParamField path="max_digits" type="int | None" default="None">
+  Maximum number of allowed digits for numbers.
+</ParamField>
+
+<ParamField path="decimal_places" type="int | None" default="None">
+  Maximum number of decimal places allowed for numbers.
+</ParamField>
+
+<ParamField path="examples" type="list[Any] | None" default="None">
+  Example values for this field.
+</ParamField>
+
+<ParamField path="deprecated" type="bool | str | None" default="None">
+  Mark this parameter field as deprecated. It will affect the generated OpenAPI (visible at `/docs`).
+</ParamField>
+
+<ParamField path="include_in_schema" type="bool" default="True">
+  Whether to include this parameter field in the generated OpenAPI.
+</ParamField>
+
+<ParamField path="json_schema_extra" type="dict[str, Any] | None" default="None">
+  Any additional JSON schema data.
+</ParamField>
+
+## Examples
+
+### Basic Cookie Parameter
+
+```python
+from typing import Annotated
+from fastapi import FastAPI, Cookie
+
+app = FastAPI()
+
+@app.get("/items/")
+async def read_items(
+    session_id: Annotated[str | None, Cookie()] = None
+):
+    return {"session_id": session_id}
+```
+
+### Required Cookie
+
+```python
+@app.get("/items/")
+async def read_items(
+    session_id: Annotated[str, Cookie()]
+):
+    return {"session_id": session_id}
+```
+
+<Note>
+  A cookie parameter is required when there is no default value.
+</Note>
+
+### Cookie with Validation
+
+```python
+@app.get("/items/")
+async def read_items(
+    session_id: Annotated[str, Cookie(min_length=32, max_length=64)]
+):
+    return {"session_id": session_id}
+```
+
+### Multiple Cookies
+
+```python
+@app.get("/items/")
+async def read_items(
+    session_id: Annotated[str | None, Cookie()] = None,
+    tracking_id: Annotated[str | None, Cookie()] = None
+):
+    return {
+        "session_id": session_id,
+        "tracking_id": tracking_id
+    }
+```
+
+### Cookie with Metadata
+
+```python
+@app.get("/items/")
+async def read_items(
+    session_id: Annotated[
+        str | None,
+        Cookie(
+            title="Session ID",
+            description="The session identifier cookie"
+        )
+    ] = None
+):
+    return {"session_id": session_id}
+```
+
+## Common Use Cases
+
+### Session Management
+
+```python
+@app.get("/user/profile")
+async def get_profile(
+    session_token: Annotated[str, Cookie()]
+):
+    # Validate session and return user profile
+    return {"session": session_token}
+```
+
+### Authentication Cookies
+
+```python
+@app.get("/dashboard")
+async def dashboard(
+    access_token: Annotated[str | None, Cookie()] = None,
+    refresh_token: Annotated[str | None, Cookie()] = None
+):
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token
+    }
+```
+
+### Tracking and Analytics
+
+```python
+@app.get("/")
+async def root(
+    analytics_id: Annotated[str | None, Cookie()] = None,
+    user_preferences: Annotated[str | None, Cookie()] = None
+):
+    return {
+        "analytics_id": analytics_id,
+        "preferences": user_preferences
+    }
+```
+
+### CSRF Token
+
+```python
+@app.post("/submit")
+async def submit_form(
+    csrf_token: Annotated[str, Cookie()]
+):
+    # Validate CSRF token
+    return {"csrf_token": csrf_token}
+```
+
+<Note>
+  Cookie parameters are read-only. To set cookies in the response, use the `Response` object or return a custom `Response`.
+</Note>
+
+## Setting Cookies in Response
+
+```python
+from fastapi import Response
+
+@app.post("/login")
+async def login(response: Response):
+    response.set_cookie(key="session_id", value="abc123")
+    return {"message": "Logged in"}
+```
+
+<Warning>
+  The `Cookie()` parameter function is only for reading cookies from requests. Use `response.set_cookie()` to set cookies in responses.
+</Warning>

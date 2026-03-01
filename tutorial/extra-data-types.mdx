@@ -1,0 +1,449 @@
+---
+title: Extra Data Types
+description: Learn how to use specialized data types in FastAPI including UUID, datetime, timedelta, and more
+---
+
+Beyond basic types like `str`, `int`, and `float`, FastAPI supports many specialized data types from Python's standard library and Pydantic.
+
+## Common Extra Data Types
+
+FastAPI/Pydantic support these additional types with automatic validation:
+
+- `UUID`: Universal Unique Identifier
+- `datetime`: Date and time
+- `date`: Date only
+- `time`: Time only
+- `timedelta`: Time duration
+- `frozenset`: Immutable set
+- `bytes`: Binary data
+- `Decimal`: Precise decimal numbers
+
+## Complete Example
+
+```python
+from datetime import datetime, time, timedelta
+from uuid import UUID
+from fastapi import Body, FastAPI
+
+app = FastAPI()
+
+@app.put("/items/{item_id}")
+async def read_items(
+    item_id: UUID,
+    start_datetime: datetime = Body(),
+    end_datetime: datetime = Body(),
+    process_after: timedelta = Body(),
+    repeat_at: time | None = Body(default=None),
+):
+    start_process = start_datetime + process_after
+    duration = end_datetime - start_process
+    return {
+        "item_id": item_id,
+        "start_datetime": start_datetime,
+        "end_datetime": end_datetime,
+        "process_after": process_after,
+        "repeat_at": repeat_at,
+        "start_process": start_process,
+        "duration": duration,
+    }
+```
+
+<Info>
+All these types are automatically:
+- Validated from the request
+- Serialized in the response
+- Documented in OpenAPI
+</Info>
+
+## UUID Type
+
+UUIDs are commonly used as unique identifiers:
+
+```python
+from uuid import UUID
+from fastapi import FastAPI
+
+app = FastAPI()
+
+@app.get("/items/{item_id}")
+async def read_item(item_id: UUID):
+    return {"item_id": item_id}
+```
+
+<CodeGroup>
+```bash Valid UUID
+curl http://localhost:8000/items/123e4567-e89b-12d3-a456-426614174000
+# ✓ Valid UUID format
+```
+
+```bash Invalid UUID
+curl http://localhost:8000/items/not-a-uuid
+# ✗ Validation error (422)
+```
+</CodeGroup>
+
+<Tip>
+UUIDs are represented as strings in JSON but validated as proper UUID format.
+</Tip>
+
+## DateTime Types
+
+### datetime - Date and Time
+
+```python
+from datetime import datetime
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class Event(BaseModel):
+    name: str
+    created_at: datetime
+    updated_at: datetime | None = None
+
+@app.post("/events/")
+async def create_event(event: Event):
+    return event
+```
+
+Example JSON:
+```json
+{
+  "name": "Conference",
+  "created_at": "2026-03-01T10:30:00",
+  "updated_at": "2026-03-01T14:45:00Z"
+}
+```
+
+### date - Date Only
+
+```python
+from datetime import date
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class Event(BaseModel):
+    name: str
+    event_date: date
+
+@app.post("/events/")
+async def create_event(event: Event):
+    return event
+```
+
+Example JSON:
+```json
+{
+  "name": "Birthday",
+  "event_date": "2026-03-01"
+}
+```
+
+### time - Time Only
+
+```python
+from datetime import time
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class Schedule(BaseModel):
+    name: str
+    start_time: time
+    end_time: time
+
+@app.post("/schedules/")
+async def create_schedule(schedule: Schedule):
+    return schedule
+```
+
+Example JSON:
+```json
+{
+  "name": "Morning Meeting",
+  "start_time": "09:00:00",
+  "end_time": "10:30:00"
+}
+```
+
+### timedelta - Duration
+
+```python
+from datetime import timedelta
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class Task(BaseModel):
+    name: str
+    duration: timedelta
+
+@app.post("/tasks/")
+async def create_task(task: Task):
+    return {
+        "name": task.name,
+        "duration_seconds": task.duration.total_seconds()
+    }
+```
+
+Example JSON:
+```json
+{
+  "name": "Review code",
+  "duration": 3600
+}
+```
+
+<Note>
+`timedelta` is represented as seconds (float) in JSON.
+</Note>
+
+## Numeric Types
+
+### Decimal - Precise Numbers
+
+Use `Decimal` for financial calculations where precision matters:
+
+```python
+from decimal import Decimal
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class Product(BaseModel):
+    name: str
+    price: Decimal
+    tax: Decimal
+
+@app.post("/products/")
+async def create_product(product: Product):
+    total = product.price + product.tax
+    return {
+        "product": product,
+        "total": total
+    }
+```
+
+<Warning>
+Use `Decimal` instead of `float` for money to avoid floating-point precision errors.
+</Warning>
+
+<CodeGroup>
+```python Good: Using Decimal
+price: Decimal = Decimal("10.50")
+tax: Decimal = Decimal("0.75")
+total = price + tax  # Exactly 11.25
+```
+
+```python Bad: Using float
+price: float = 10.50
+tax: float = 0.75
+total = price + tax  # May have precision errors
+```
+</CodeGroup>
+
+## Binary Data Types
+
+### bytes - Binary Data
+
+```python
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class FileData(BaseModel):
+    filename: str
+    content: bytes
+
+@app.post("/files/")
+async def create_file(file_data: FileData):
+    return {
+        "filename": file_data.filename,
+        "size": len(file_data.content)
+    }
+```
+
+<Info>
+`bytes` are represented as base64-encoded strings in JSON.
+</Info>
+
+## Collection Types
+
+### frozenset - Immutable Set
+
+```python
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class Item(BaseModel):
+    name: str
+    tags: frozenset[str]
+
+@app.post("/items/")
+async def create_item(item: Item):
+    return item
+```
+
+Example JSON:
+```json
+{
+  "name": "Widget",
+  "tags": ["electronics", "gadget", "new"]
+}
+```
+
+<Note>
+`frozenset` ensures unique values and is immutable, but is represented as a list in JSON.
+</Note>
+
+## URL Types
+
+### HttpUrl - URL Validation
+
+```python
+from fastapi import FastAPI
+from pydantic import BaseModel, HttpUrl
+
+app = FastAPI()
+
+class Website(BaseModel):
+    name: str
+    url: HttpUrl
+
+@app.post("/websites/")
+async def create_website(website: Website):
+    return website
+```
+
+This validates that the URL:
+- Has a valid scheme (http/https)
+- Has a valid domain
+- Is properly formatted
+
+## Email and Other String Types
+
+### EmailStr - Email Validation
+
+```python
+from fastapi import FastAPI
+from pydantic import BaseModel, EmailStr
+
+app = FastAPI()
+
+class User(BaseModel):
+    username: str
+    email: EmailStr
+
+@app.post("/users/")
+async def create_user(user: User):
+    return user
+```
+
+<Warning>
+`EmailStr` requires the `email-validator` package:
+```bash
+pip install pydantic[email]
+```
+</Warning>
+
+## Path and File Types
+
+### FilePath and DirectoryPath
+
+```python
+from pathlib import Path
+from fastapi import FastAPI
+from pydantic import BaseModel, FilePath, DirectoryPath
+
+app = FastAPI()
+
+class Config(BaseModel):
+    config_file: FilePath
+    data_dir: DirectoryPath
+
+# These validate that paths exist on the filesystem
+```
+
+## Color Type
+
+```python
+from fastapi import FastAPI
+from pydantic import BaseModel, ColorStr
+
+app = FastAPI()
+
+class Theme(BaseModel):
+    name: str
+    primary_color: ColorStr
+    secondary_color: ColorStr
+
+@app.post("/themes/")
+async def create_theme(theme: Theme):
+    return theme
+```
+
+Accepts formats:
+- `"red"`
+- `"#ff0000"`
+- `"rgb(255, 0, 0)"`
+- `"rgba(255, 0, 0, 0.5)"`
+
+## All Supported Types Summary
+
+<Steps>
+  <Step title="Standard Python">
+    `UUID`, `datetime`, `date`, `time`, `timedelta`, `Decimal`, `bytes`, `frozenset`
+  </Step>
+  
+  <Step title="Pydantic Types">
+    `EmailStr`, `HttpUrl`, `FilePath`, `DirectoryPath`, `ColorStr`, `Json`
+  </Step>
+  
+  <Step title="Network Types">
+    `IPvAnyAddress`, `IPvAnyInterface`, `IPvAnyNetwork`
+  </Step>
+  
+  <Step title="Secret Types">
+    `SecretStr`, `SecretBytes` (not logged/dumped by default)
+  </Step>
+</Steps>
+
+## Type Conversion and Validation
+
+All these types provide:
+
+1. **Automatic Conversion**: String → Type
+2. **Validation**: Ensures format is correct
+3. **Serialization**: Type → JSON
+4. **Documentation**: Correct OpenAPI schema
+
+<CodeGroup>
+```json Request (JSON strings)
+{
+  "item_id": "123e4567-e89b-12d3-a456-426614174000",
+  "start_datetime": "2026-03-01T10:30:00",
+  "process_after": 3600
+}
+```
+
+```python Converted to Python types
+item_id: UUID("123e4567-e89b-12d3-a456-426614174000")
+start_datetime: datetime(2026, 3, 1, 10, 30, 0)
+process_after: timedelta(seconds=3600)
+```
+</CodeGroup>
+
+## Related Topics
+
+- [Request Body](/tutorial/request-body) - Use these types in request models
+- [Response Model](/tutorial/response-model) - Use these types in responses
+- [Path Parameters](/tutorial/path-parameters) - Use UUID and other types in URLs

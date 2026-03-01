@@ -1,0 +1,247 @@
+---
+title: Bigger Applications - Multiple Files
+description: Structure your FastAPI application across multiple files using APIRouter for modular, scalable applications
+---
+
+As your application grows, you'll want to organize it across multiple files. FastAPI provides `APIRouter` to help you structure larger applications in a clean, modular way.
+
+## Application Structure
+
+For bigger applications, you typically organize code like this:
+
+```
+app/
+├── __init__.py
+├── main.py
+├── dependencies.py
+└── routers/
+    ├── __init__.py
+    ├── users.py
+    └── items.py
+```
+
+## APIRouter
+
+The `APIRouter` class works similarly to `FastAPI` - it allows you to define path operations that can later be included in your main application.
+
+### Creating a Router
+
+Create a router in a separate file (e.g., `routers/users.py`):
+
+```python
+from fastapi import APIRouter
+
+router = APIRouter()
+
+@router.get("/users/", tags=["users"])
+async def read_users():
+    return [{"username": "Rick"}, {"username": "Morty"}]
+
+@router.get("/users/me", tags=["users"])
+async def read_user_me():
+    return {"username": "fakecurrentuser"}
+
+@router.get("/users/{username}", tags=["users"])
+async def read_user(username: str):
+    return {"username": username}
+```
+
+### Router with Prefix and Tags
+
+You can configure routers with common parameters:
+
+```python
+from fastapi import APIRouter, Depends, HTTPException
+from ..dependencies import get_token_header
+
+router = APIRouter(
+    prefix="/items",
+    tags=["items"],
+    dependencies=[Depends(get_token_header)],
+    responses={404: {"description": "Not found"}},
+)
+
+fake_items_db = {"plumbus": {"name": "Plumbus"}, "gun": {"name": "Portal Gun"}}
+
+@router.get("/")
+async def read_items():
+    return fake_items_db
+
+@router.get("/{item_id}")
+async def read_item(item_id: str):
+    if item_id not in fake_items_db:
+        raise HTTPException(status_code=404, detail="Item not found")
+    return {"name": fake_items_db[item_id]["name"], "item_id": item_id}
+
+@router.put(
+    "/{item_id}",
+    tags=["custom"],
+    responses={403: {"description": "Operation forbidden"}},
+)
+async def update_item(item_id: str):
+    if item_id != "plumbus":
+        raise HTTPException(
+            status_code=403, detail="You can only update the item: plumbus"
+        )
+    return {"item_id": item_id, "name": "The great Plumbus"}
+```
+
+## Including Routers
+
+In your main application file (`main.py`), include the routers:
+
+```python
+from fastapi import Depends, FastAPI
+from .dependencies import get_query_token, get_token_header
+from .internal import admin
+from .routers import items, users
+
+app = FastAPI(dependencies=[Depends(get_query_token)])
+
+app.include_router(users.router)
+app.include_router(items.router)
+app.include_router(
+    admin.router,
+    prefix="/admin",
+    tags=["admin"],
+    dependencies=[Depends(get_token_header)],
+    responses={418: {"description": "I'm a teapot"}},
+)
+
+@app.get("/")
+async def root():
+    return {"message": "Hello Bigger Applications!"}
+```
+
+<Note>
+When using `prefix`, don't include leading slashes in your router's path operations. The prefix is automatically prepended.
+</Note>
+
+## Router Parameters
+
+The `APIRouter` accepts several parameters:
+
+<Steps>
+
+<Step title="prefix">
+A path prefix for all routes in the router. Must start with `/` and not end with `/`.
+
+```python
+router = APIRouter(prefix="/items")
+```
+</Step>
+
+<Step title="tags">
+Tags to apply to all path operations in the router for OpenAPI documentation.
+
+```python
+router = APIRouter(tags=["items", "inventory"])
+```
+</Step>
+
+<Step title="dependencies">
+Dependencies to apply to all path operations in the router.
+
+```python
+router = APIRouter(dependencies=[Depends(verify_token), Depends(verify_key)])
+```
+</Step>
+
+<Step title="responses">
+Additional responses to show in OpenAPI documentation.
+
+```python
+router = APIRouter(responses={404: {"description": "Not found"}})
+```
+</Step>
+
+</Steps>
+
+## include_router() Parameters
+
+When including a router in your app, you can override or add to the router's configuration:
+
+```python
+app.include_router(
+    items.router,
+    prefix="/api/v1",  # Additional prefix
+    tags=["v1"],  # Additional tags
+    dependencies=[Depends(api_key_header)],  # Additional dependencies
+    responses={500: {"description": "Internal server error"}},  # Additional responses
+)
+```
+
+<Info>
+Parameters specified in `include_router()` are added to those defined in the router itself. Both sets of tags, dependencies, and responses will be applied.
+</Info>
+
+## Multiple Routers
+
+You can include the same router multiple times with different configurations:
+
+```python
+app.include_router(items.router, prefix="/api/v1", tags=["v1"])
+app.include_router(items.router, prefix="/api/v2", tags=["v2"])
+```
+
+## Nested Routers
+
+You can also include routers within other routers:
+
+```python
+from fastapi import APIRouter
+
+api_router = APIRouter()
+api_router.include_router(users.router, prefix="/users")
+api_router.include_router(items.router, prefix="/items")
+
+app.include_router(api_router, prefix="/api/v1")
+```
+
+<Warning>
+Be careful with dependencies and middleware when nesting routers deeply. Each level adds its dependencies to the execution chain.
+</Warning>
+
+## Benefits
+
+<Steps>
+
+<Step title="Modularity">
+Keep related endpoints together in separate files, making your codebase easier to navigate and maintain.
+</Step>
+
+<Step title="Reusability">
+Reuse routers in different applications or include the same router multiple times with different configurations.
+</Step>
+
+<Step title="Team Collaboration">
+Different team members can work on different routers without conflicts.
+</Step>
+
+<Step title="Testing">
+Test routers independently before integrating them into the main application.
+</Step>
+
+</Steps>
+
+## Path Operation Uniqueness
+
+<Warning>
+Make sure that path operations across all routers are unique. Having duplicate paths with the same HTTP method will cause the last one to override previous ones.
+</Warning>
+
+```python
+# In users.router
+@router.get("/status")
+async def user_status():
+    return {"status": "user ok"}
+
+# In items.router - This will conflict if both have the same prefix!
+@router.get("/status")
+async def item_status():
+    return {"status": "items ok"}
+```
+
+<Tip>
+Use unique prefixes for each router to avoid path conflicts, or carefully plan your API structure.
+</Tip>

@@ -1,0 +1,179 @@
+---
+title: FastAPI Deployment Overview
+description: Learn about deploying FastAPI applications, key concepts, and deployment strategies for production environments.
+---
+
+Deploying a **FastAPI** application is relatively straightforward, but understanding the key concepts will help you choose the best deployment strategy for your needs.
+
+## What Does Deployment Mean
+
+To **deploy** an application means to perform the necessary steps to make it **available to users**.
+
+For a **web API**, deployment typically involves:
+- Putting it on a **remote server** or cloud platform
+- Using a **server program** that provides good performance and stability
+- Ensuring your **users** can **access** the application efficiently and reliably
+
+This contrasts with the **development** stage, where you're constantly changing code, breaking and fixing things, and restarting the development server.
+
+## Key Deployment Concepts
+
+When deploying FastAPI applications, there are several critical concepts to understand:
+
+<Steps>
+  <Step title="Security - HTTPS">
+    Configure SSL/TLS certificates to encrypt traffic between clients and your API. This is essential for production applications.
+  </Step>
+  
+  <Step title="Running on Startup">
+    Ensure your application starts automatically when the server boots, without manual intervention.
+  </Step>
+  
+  <Step title="Restarts">
+    Configure automatic restarts if your application crashes due to errors or other issues.
+  </Step>
+  
+  <Step title="Replication">
+    Run multiple worker processes to handle concurrent requests and utilize multiple CPU cores.
+  </Step>
+  
+  <Step title="Memory Management">
+    Monitor and optimize memory usage, especially when running multiple processes or handling large data.
+  </Step>
+  
+  <Step title="Pre-Start Steps">
+    Handle tasks like database migrations before starting your application.
+  </Step>
+</Steps>
+
+## ASGI Servers
+
+FastAPI is built on ASGI (Asynchronous Server Gateway Interface). To run your application in production, you need an ASGI server.
+
+### Uvicorn
+
+**Uvicorn** is the recommended ASGI server for FastAPI. It's lightning-fast and production-ready.
+
+```bash
+# Install Uvicorn
+pip install "uvicorn[standard]"
+
+# Run your application
+uvicorn main:app --host 0.0.0.0 --port 8000
+```
+
+<Note>
+  The FastAPI CLI uses Uvicorn under the hood, so you can also use `fastapi run` for production deployments.
+</Note>
+
+### Alternative ASGI Servers
+
+While Uvicorn is recommended, other ASGI servers are also compatible:
+
+- **Hypercorn** - Supports HTTP/2 and HTTP/3
+- **Daphne** - Django Channels ASGI server
+
+## Deployment Strategies
+
+There are multiple ways to deploy FastAPI applications:
+
+### Self-Hosted Server
+
+Deploy on your own server or virtual machine using:
+- Docker containers
+- Process managers (systemd, supervisor)
+- Reverse proxies (Nginx, Traefik)
+
+### Cloud Platforms
+
+Use managed cloud services:
+- **Platform as a Service (PaaS)**: Railway, Render, Heroku
+- **Container Services**: AWS ECS, Google Cloud Run, Azure Container Instances
+- **Kubernetes**: AWS EKS, Google GKE, Azure AKS
+- **Serverless**: AWS Lambda, Google Cloud Functions, Azure Functions
+
+### Container Orchestration
+
+For larger deployments:
+- **Kubernetes** - Industry-standard orchestration
+- **Docker Swarm** - Simpler alternative to Kubernetes
+- **Nomad** - HashiCorp's orchestrator
+
+<Tip>
+  Start simple with a single server deployment, then scale to containers and orchestration as your needs grow.
+</Tip>
+
+## Process Managers vs. Container Orchestration
+
+### Process Managers
+
+For single-server deployments, use process managers to handle worker processes:
+
+```bash
+# Using Uvicorn with workers
+uvicorn main:app --workers 4
+
+# Or with FastAPI CLI
+fastapi run --workers 4 main.py
+```
+
+### Container Orchestration
+
+For multi-server deployments, let the orchestrator handle replication:
+
+- **One process per container**
+- **One Uvicorn process** (no `--workers`)
+- **Multiple containers** managed by Kubernetes/Swarm
+
+<Warning>
+  Don't use multiple workers inside containers when using Kubernetes or similar orchestrators - let the orchestrator handle replication instead.
+</Warning>
+
+## Performance Considerations
+
+### Worker Processes
+
+The number of workers should typically be:
+
+```python
+workers = (2 * CPU_cores) + 1
+```
+
+For example, on a 4-core machine:
+
+```bash
+fastapi run --workers 9 main.py
+```
+
+### Async vs. Workers
+
+FastAPI's async capabilities allow handling many concurrent requests with a single worker. Consider:
+
+- **I/O-bound applications**: Fewer workers, leverage async
+- **CPU-bound applications**: More workers to utilize all cores
+
+<Info>
+  A single Uvicorn process can handle thousands of concurrent connections thanks to async/await.
+</Info>
+
+## Resource Utilization
+
+Aim for efficient resource usage:
+
+- **Target**: 50-90% CPU and memory utilization
+- **Monitor**: Use tools like `htop`, `docker stats`, or cloud monitoring
+- **Scale**: Add workers/containers when consistently above 90%
+- **Optimize**: Reduce workers/containers if consistently below 50%
+
+## Next Steps
+
+Explore specific deployment scenarios:
+
+- [Docker Deployment](/deployment/docker) - Containerize your FastAPI application
+- [Server Workers](/deployment/server-workers) - Configure Uvicorn with Gunicorn
+- [HTTPS Setup](/deployment/https) - Secure your API with SSL/TLS
+- [Cloud Deployment](/deployment/cloud) - Deploy to cloud platforms
+
+<Tip>
+  The best deployment strategy depends on your specific requirements. Start with the simplest approach that meets your needs, then scale as necessary.
+</Tip>

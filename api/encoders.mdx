@@ -1,0 +1,237 @@
+---
+title: jsonable_encoder
+description: Convert any object to a JSON-compatible format for serialization.
+---
+
+## jsonable_encoder
+
+Convert any object to something that can be encoded in JSON. This function is used internally by FastAPI to ensure anything you return can be encoded as JSON before sending it to the client.
+
+You can also use it yourself, for example to convert objects before saving them in a database that supports only JSON.
+
+```python
+from fastapi.encoders import jsonable_encoder
+from pydantic import BaseModel
+
+class Item(BaseModel):
+    name: str
+    price: float
+    tags: set[str] = set()
+
+item = Item(name="Foo", price=50.2, tags={"bar", "baz"})
+json_compatible_item = jsonable_encoder(item)
+# {"name": "Foo", "price": 50.2, "tags": ["bar", "baz"]}
+```
+
+## Function Signature
+
+```python
+def jsonable_encoder(
+    obj: Any,
+    include: IncEx | None = None,
+    exclude: IncEx | None = None,
+    by_alias: bool = True,
+    exclude_unset: bool = False,
+    exclude_defaults: bool = False,
+    exclude_none: bool = False,
+    custom_encoder: dict[Any, Callable[[Any], Any]] | None = None,
+    sqlalchemy_safe: bool = True,
+) -> Any
+```
+
+## Parameters
+
+<ParamField path="obj" type="Any" required>
+  The input object to convert to JSON. Can be a Pydantic model, dataclass, dict, list, or any Python object.
+</ParamField>
+
+<ParamField path="include" type="set | dict | None" default="None">
+  Pydantic's `include` parameter, used to specify which fields to include in the output. Can be a set of field names or a nested dict for nested models.
+</ParamField>
+
+<ParamField path="exclude" type="set | dict | None" default="None">
+  Pydantic's `exclude` parameter, used to specify which fields to exclude from the output. Can be a set of field names or a nested dict for nested models.
+</ParamField>
+
+<ParamField path="by_alias" type="bool" default="True">
+  If `True`, use field aliases defined in Pydantic models instead of the Python attribute names. This is useful for APIs where you want to use different names in JSON than in Python code.
+</ParamField>
+
+<ParamField path="exclude_unset" type="bool" default="False">
+  If `True`, exclude fields that were not explicitly set and only have their default values.
+</ParamField>
+
+<ParamField path="exclude_defaults" type="bool" default="False">
+  If `True`, exclude fields that have the same value as their default, even if they were explicitly set.
+</ParamField>
+
+<ParamField path="exclude_none" type="bool" default="False">
+  If `True`, exclude any fields that have a `None` value from the output.
+</ParamField>
+
+<ParamField path="custom_encoder" type="dict[Any, Callable] | None" default="None">
+  A dictionary mapping types to encoder functions. Useful for custom serialization of specific types.
+</ParamField>
+
+<ParamField path="sqlalchemy_safe" type="bool" default="True">
+  If `True`, exclude fields starting with `_sa` from the output. This is a compatibility feature for SQLAlchemy objects, which store internal state in these attributes.
+</ParamField>
+
+## Supported Types
+
+The function handles many Python types automatically:
+
+- **Pydantic models** - Converted using `model_dump()`
+- **Dataclasses** - Converted to dictionaries
+- **Datetime objects** - Converted to ISO format strings
+- **UUID** - Converted to strings
+- **Decimal** - Converted to int or float
+- **Enum** - Extracts the `.value`
+- **Path** - Converted to strings
+- **Sets, frozensets, deque** - Converted to lists
+- **bytes** - Decoded to strings
+- **IPv4/IPv6 addresses** - Converted to strings
+
+## Usage Examples
+
+### Basic Pydantic Model
+
+```python
+from pydantic import BaseModel
+from fastapi.encoders import jsonable_encoder
+
+class User(BaseModel):
+    name: str
+    age: int
+    email: str | None = None
+
+user = User(name="John", age=30)
+encoded = jsonable_encoder(user)
+# {"name": "John", "age": 30, "email": None}
+```
+
+### Excluding Unset Fields
+
+```python
+user = User(name="John", age=30)
+encoded = jsonable_encoder(user, exclude_unset=True)
+# {"name": "John", "age": 30}
+# Note: "email" is excluded because it wasn't set
+```
+
+### Excluding None Values
+
+```python
+user = User(name="John", age=30, email=None)
+encoded = jsonable_encoder(user, exclude_none=True)
+# {"name": "John", "age": 30}
+```
+
+### Including/Excluding Specific Fields
+
+```python
+user = User(name="John", age=30, email="john@example.com")
+
+# Include only specific fields
+encoded = jsonable_encoder(user, include={"name", "email"})
+# {"name": "John", "email": "john@example.com"}
+
+# Exclude specific fields
+encoded = jsonable_encoder(user, exclude={"age"})
+# {"name": "John", "email": "john@example.com"}
+```
+
+### Custom Encoders
+
+```python
+from datetime import datetime
+
+class Event(BaseModel):
+    name: str
+    timestamp: datetime
+
+custom_encoder = {
+    datetime: lambda dt: dt.strftime("%Y-%m-%d")
+}
+
+event = Event(name="Meeting", timestamp=datetime.now())
+encoded = jsonable_encoder(event, custom_encoder=custom_encoder)
+# {"name": "Meeting", "timestamp": "2026-03-01"}
+```
+
+### With Nested Models
+
+```python
+class Address(BaseModel):
+    street: str
+    city: str
+    zip_code: str | None = None
+
+class Person(BaseModel):
+    name: str
+    address: Address
+
+person = Person(
+    name="Jane",
+    address=Address(street="123 Main St", city="Boston")
+)
+
+# Exclude nested fields
+encoded = jsonable_encoder(
+    person,
+    exclude={"address": {"zip_code"}}
+)
+# {"name": "Jane", "address": {"street": "123 Main St", "city": "Boston"}}
+```
+
+## Common Use Cases
+
+### Storing in a Database
+
+```python
+@app.post("/users/")
+def create_user(user: User):
+    json_user = jsonable_encoder(user)
+    database.users.insert_one(json_user)
+    return user
+```
+
+### Patching with Exclude Unset
+
+```python
+@app.patch("/users/{user_id}")
+def update_user(user_id: int, user: User):
+    # Only update fields that were explicitly provided
+    update_data = jsonable_encoder(user, exclude_unset=True)
+    database.users.update_one({"id": user_id}, {"$set": update_data})
+    return user
+```
+
+### Preparing for JSON Response
+
+```python
+from datetime import datetime
+from uuid import UUID
+
+data = {
+    "id": UUID("12345678-1234-5678-1234-567812345678"),
+    "created_at": datetime.now(),
+    "tags": {"python", "fastapi"},
+}
+
+json_compatible = jsonable_encoder(data)
+# All types are now JSON-serializable
+```
+
+## Usage Notes
+
+- FastAPI uses this internally for response serialization - you usually don't need to call it explicitly
+- Very useful when working with databases that expect JSON-compatible data
+- Essential for PATCH operations where you only want to update provided fields
+- Handles circular references gracefully for most common cases
+- SQLAlchemy models are supported when `sqlalchemy_safe=True`
+- Preserves nested structures while converting types recursively
+
+## Learn More
+
+Read more in the [FastAPI docs for JSON Compatible Encoder](https://fastapi.tiangolo.com/tutorial/encoder/).

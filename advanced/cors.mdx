@@ -1,0 +1,341 @@
+---
+title: "CORS (Cross-Origin Resource Sharing)"
+description: "Configure CORS middleware to allow cross-origin requests in FastAPI"
+---
+
+CORS (Cross-Origin Resource Sharing) is a security feature that controls which domains can access your API from web browsers. FastAPI provides `CORSMiddleware` to configure CORS policies.
+
+## Why CORS Matters
+
+Browsers implement the same-origin policy, which prevents JavaScript running on one domain from accessing resources on another domain. CORS allows you to explicitly permit cross-origin requests.
+
+<Warning>
+Without proper CORS configuration, frontend applications running on different domains won't be able to access your API.
+</Warning>
+
+## Basic Setup
+
+```python
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI()
+
+origins = [
+    "http://localhost",
+    "http://localhost:8080",
+    "http://localhost:3000",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.get("/")
+async def main():
+    return {"message": "Hello World"}
+```
+
+## Configuration Parameters
+
+### allow_origins
+
+List of origins that are allowed to make cross-origin requests:
+
+```python
+# Specific origins
+allow_origins=[
+    "https://example.com",
+    "https://www.example.com",
+    "http://localhost:3000",
+]
+
+# Allow all origins (not recommended for production)
+allow_origins=["*"]
+```
+
+<Warning>
+Using `allow_origins=["*"]` allows any domain to access your API. Only use this in development or for truly public APIs.
+</Warning>
+
+### allow_credentials
+
+Whether to allow credentials (cookies, authorization headers) in cross-origin requests:
+
+```python
+allow_credentials=True  # Allow cookies and auth headers
+allow_credentials=False # Don't allow credentials
+```
+
+<Info>
+When `allow_credentials=True`, you cannot use `allow_origins=["*"]`. You must specify exact origins.
+</Info>
+
+### allow_methods
+
+HTTP methods allowed for cross-origin requests:
+
+```python
+# Allow all methods
+allow_methods=["*"]
+
+# Allow specific methods
+allow_methods=["GET", "POST", "PUT", "DELETE"]
+```
+
+### allow_headers
+
+HTTP headers allowed in cross-origin requests:
+
+```python
+# Allow all headers
+allow_headers=["*"]
+
+# Allow specific headers
+allow_headers=["Content-Type", "Authorization", "X-Custom-Header"]
+```
+
+### expose_headers
+
+Headers that browsers are allowed to access:
+
+```python
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    expose_headers=["X-Custom-Header", "X-Process-Time"],
+)
+```
+
+### max_age
+
+How long browsers can cache CORS preflight responses (in seconds):
+
+```python
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    max_age=3600,  # Cache for 1 hour
+)
+```
+
+## Common Configurations
+
+### Development Setup
+
+Permissive configuration for local development:
+
+```python
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://localhost:8080"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+```
+
+### Production Setup
+
+Restrictive configuration for production:
+
+```python
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://example.com",
+        "https://www.example.com",
+        "https://app.example.com",
+    ],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["Content-Type", "Authorization"],
+    expose_headers=["X-Request-ID"],
+    max_age=3600,
+)
+```
+
+### Environment-Based Configuration
+
+```python
+import os
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI()
+
+# Get allowed origins from environment variable
+allowed_origins = os.getenv(
+    "ALLOWED_ORIGINS",
+    "http://localhost:3000,http://localhost:8080"
+).split(",")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+```
+
+## Understanding Preflight Requests
+
+Browsers send a preflight OPTIONS request before certain cross-origin requests:
+
+```python
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.get("/items")
+async def get_items():
+    return [{"id": 1, "name": "Item"}]
+```
+
+When a browser makes a request to `/items`, it first sends:
+```
+OPTIONS /items
+Origin: http://localhost:3000
+Access-Control-Request-Method: GET
+```
+
+The middleware responds with CORS headers, then the actual GET request proceeds.
+
+<Tip>
+Preflight requests are cached based on `max_age`. Increase this value to reduce preflight request overhead.
+</Tip>
+
+## Wildcard Subdomains
+
+To allow all subdomains of a domain:
+
+```python
+import re
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI()
+
+# This allows subdomains using regex patterns
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=r"https://.*\.example\.com",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+```
+
+## Testing CORS
+
+Test your CORS configuration:
+
+```bash
+# Test preflight request
+curl -X OPTIONS http://localhost:8000/items \
+  -H "Origin: http://localhost:3000" \
+  -H "Access-Control-Request-Method: GET" \
+  -v
+
+# Test actual request
+curl -X GET http://localhost:8000/items \
+  -H "Origin: http://localhost:3000" \
+  -v
+```
+
+Look for these response headers:
+- `Access-Control-Allow-Origin`
+- `Access-Control-Allow-Methods`
+- `Access-Control-Allow-Headers`
+- `Access-Control-Allow-Credentials`
+
+## Common Issues
+
+### Credentials with Wildcard Origins
+
+```python
+# This will NOT work
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,  # Error: Can't use credentials with wildcard
+)
+
+# Solution: Specify exact origins
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://example.com"],
+    allow_credentials=True,
+)
+```
+
+### Missing Headers
+
+If your frontend sends custom headers, you must allow them:
+
+```python
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_headers=["Content-Type", "Authorization", "X-Custom-Header"],
+)
+```
+
+### CORS with Authentication
+
+```python
+from fastapi import FastAPI, Header
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,  # Required for cookies and auth headers
+    allow_methods=["*"],
+    allow_headers=["Content-Type", "Authorization"],
+)
+
+@app.get("/protected")
+async def protected_route(authorization: str = Header(None)):
+    return {"message": "Protected data"}
+```
+
+<Note>
+When using authentication with CORS:
+- Set `allow_credentials=True`
+- Include "Authorization" in `allow_headers`
+- Specify exact origins (no wildcards)
+- Ensure cookies have the correct `SameSite` attribute
+</Note>
+
+## See Also
+
+- [Custom Middleware](/advanced/middleware) - Create custom middleware
+- [Behind a Proxy](/advanced/behind-a-proxy) - Configure FastAPI behind a reverse proxy
+- [Security](/security) - Authentication and authorization

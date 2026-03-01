@@ -1,0 +1,240 @@
+---
+title: "Path Operation Advanced Configuration"
+description: "Learn about advanced path operation decorator parameters including operation_id, callbacks, OpenAPI extras, and more"
+---
+
+## Overview
+
+FastAPI provides advanced configuration options for path operation decorators that give you fine-grained control over your API's behavior and OpenAPI documentation.
+
+## Operation ID
+
+You can set a custom operation ID for your path operation. This is particularly useful when generating API clients, as the operation ID becomes the function name in the generated client.
+
+```python
+from fastapi import FastAPI
+
+app = FastAPI()
+
+@app.get("/items/", operation_id="some_specific_id_you_define")
+async def read_items():
+    return [{"item_id": "Foo"}]
+```
+
+<Warning>
+Make sure your `operation_id` is unique across all operations in your API. FastAPI won't validate this for you.
+</Warning>
+
+## Summary and Description
+
+You can add a summary and description to your path operations:
+
+```python
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class Item(BaseModel):
+    name: str
+    description: str | None = None
+    price: float
+    tax: float | None = None
+    tags: set[str] = set()
+
+@app.post("/items/", summary="Create an item")
+async def create_item(item: Item) -> Item:
+    """
+    Create an item with all the information:
+
+    - **name**: each item must have a name
+    - **description**: a long description
+    - **price**: required
+    - **tax**: if the item doesn't have tax, you can omit this
+    - **tags**: a set of unique tag strings for this item
+    """
+    return item
+```
+
+The docstring becomes the description in the OpenAPI schema, while the `summary` parameter provides a short title.
+
+## Response Description
+
+Customize the description of the successful response:
+
+```python
+@app.post(
+    "/items/",
+    response_description="The created item"
+)
+async def create_item(item: Item) -> Item:
+    return item
+```
+
+<Info>
+The default `response_description` is "Successful Response".
+</Info>
+
+## Deprecation
+
+Mark an endpoint as deprecated:
+
+```python
+@app.get("/items/", deprecated=True)
+async def read_items():
+    return [{"item_id": "Foo"}]
+```
+
+This will show the endpoint as deprecated in the interactive API docs.
+
+## Tags
+
+Organize your endpoints with tags:
+
+```python
+@app.get("/items/", tags=["items"])
+async def read_items():
+    return [{"item_id": "Foo"}]
+
+@app.get("/users/", tags=["users"])
+async def read_users():
+    return [{"username": "johndoe"}]
+```
+
+Tags group related endpoints together in the API documentation.
+
+## Include in Schema
+
+Exclude an endpoint from the OpenAPI schema:
+
+```python
+@app.get("/items/", include_in_schema=False)
+async def read_items():
+    return [{"item_id": "Foo"}]
+```
+
+<Note>
+This is useful for internal endpoints that you don't want to expose in your API documentation.
+</Note>
+
+## OpenAPI Extra
+
+Add custom OpenAPI fields that aren't directly supported:
+
+```python
+@app.get(
+    "/items/",
+    openapi_extra={
+        "x-custom-field": "custom-value",
+        "externalDocs": {
+            "description": "External documentation",
+            "url": "https://example.com/docs"
+        }
+    }
+)
+async def read_items():
+    return [{"item_id": "Foo"}]
+```
+
+The `openapi_extra` dictionary is merged into the OpenAPI schema for this path operation.
+
+## Generate Unique ID Function
+
+Customize how operation IDs are generated:
+
+```python
+from fastapi import FastAPI
+from fastapi.routing import APIRoute
+
+def custom_generate_unique_id(route: APIRoute) -> str:
+    return f"{route.tags[0]}-{route.name}"
+
+app = FastAPI(generate_unique_id_function=custom_generate_unique_id)
+
+@app.get("/items/", tags=["items"])
+async def read_items():
+    return [{"item_id": "Foo"}]
+```
+
+<Tip>
+This is particularly useful when generating API clients, as it affects the generated function names.
+</Tip>
+
+## Callbacks
+
+Define OpenAPI callbacks for webhooks that your API will call:
+
+```python
+from fastapi import APIRouter, FastAPI
+
+app = FastAPI()
+
+callback_router = APIRouter()
+
+@callback_router.post("{$callback_url}/notification")
+async def callback_notification(body: dict):
+    pass
+
+@app.post("/items/", callbacks=callback_router.routes)
+async def create_item(callback_url: str | None = None):
+    # Your endpoint logic here
+    # After processing, your API would call the callback_url
+    return {"message": "Item created"}
+```
+
+<Warning>
+Callbacks are for documentation purposes in OpenAPI. You still need to implement the actual HTTP calls to the callback URLs in your endpoint logic.
+</Warning>
+
+## Response Class
+
+Specify the default response class for an endpoint:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
+
+app = FastAPI()
+
+@app.get("/items/", response_class=HTMLResponse)
+async def read_items():
+    return "<html><body><h1>Items</h1></body></html>"
+```
+
+See [Custom Response Classes](/advanced/custom-response) for more details.
+
+## All Parameters Together
+
+Here's an example using multiple advanced parameters:
+
+```python
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class Item(BaseModel):
+    name: str
+    price: float
+
+@app.post(
+    "/items/",
+    operation_id="create_new_item",
+    summary="Create a new item",
+    response_description="The newly created item",
+    tags=["items"],
+    deprecated=False,
+    include_in_schema=True,
+    openapi_extra={
+        "x-api-version": "1.0"
+    }
+)
+async def create_item(item: Item) -> Item:
+    """
+    Create an item with the following attributes:
+    
+    - **name**: The item name
+    - **price**: The item price
+    """
+    return item
+```

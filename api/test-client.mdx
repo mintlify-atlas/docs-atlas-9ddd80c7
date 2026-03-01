@@ -1,0 +1,181 @@
+---
+title: TestClient
+description: A test client for making requests to FastAPI applications in tests.
+---
+
+## TestClient
+
+A test client for testing FastAPI applications. It allows you to make requests to your application without running a server, making it perfect for unit and integration tests.
+
+TestClient is based on Starlette's TestClient, which uses the `httpx` library under the hood.
+
+```python
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+app = FastAPI()
+
+@app.get("/")
+def read_main():
+    return {"msg": "Hello World"}
+
+client = TestClient(app)
+
+def test_read_main():
+    response = client.get("/")
+    assert response.status_code == 200
+    assert response.json() == {"msg": "Hello World"}
+```
+
+## Constructor
+
+```python
+TestClient(app: FastAPI, base_url: str = "http://testserver", ...)
+```
+
+<ParamField path="app" type="FastAPI" required>
+  The FastAPI application instance to test.
+</ParamField>
+
+<ParamField path="base_url" type="str" default="http://testserver">
+  The base URL to use for requests.
+</ParamField>
+
+## HTTP Methods
+
+TestClient provides methods for all standard HTTP verbs:
+
+### get
+
+```python
+response = client.get("/items/1", params={"q": "search"})
+```
+
+### post
+
+```python
+response = client.post("/items/", json={"name": "Item"})
+```
+
+### put
+
+```python
+response = client.put("/items/1", json={"name": "Updated Item"})
+```
+
+### delete
+
+```python
+response = client.delete("/items/1")
+```
+
+### patch
+
+```python
+response = client.patch("/items/1", json={"name": "Patched"})
+```
+
+### options
+
+```python
+response = client.options("/items/")
+```
+
+### head
+
+```python
+response = client.head("/items/")
+```
+
+## Common Parameters
+
+All request methods accept these common parameters:
+
+<ParamField path="url" type="str" required>
+  The URL path to request (e.g., "/items/1").
+</ParamField>
+
+<ParamField path="params" type="dict">
+  Query parameters to include in the URL.
+</ParamField>
+
+<ParamField path="headers" type="dict">
+  HTTP headers to send with the request.
+</ParamField>
+
+<ParamField path="cookies" type="dict">
+  Cookies to send with the request.
+</ParamField>
+
+<ParamField path="json" type="Any">
+  JSON data to send in the request body (automatically serialized).
+</ParamField>
+
+<ParamField path="data" type="dict">
+  Form data to send in the request body.
+</ParamField>
+
+<ParamField path="files" type="dict">
+  Files to upload (e.g., `{"file": open("test.txt", "rb")}`).
+</ParamField>
+
+## Response Object
+
+The response object provides:
+
+- `response.status_code` - HTTP status code (e.g., 200, 404)
+- `response.json()` - Parse response body as JSON
+- `response.text` - Response body as text
+- `response.content` - Response body as bytes
+- `response.headers` - Response headers
+- `response.cookies` - Response cookies
+
+## Testing Examples
+
+### Testing with Authentication
+
+```python
+def test_with_auth():
+    response = client.get(
+        "/users/me",
+        headers={"Authorization": "Bearer token123"}
+    )
+    assert response.status_code == 200
+```
+
+### Testing File Uploads
+
+```python
+def test_upload_file():
+    files = {"file": ("test.txt", b"file content", "text/plain")}
+    response = client.post("/upload/", files=files)
+    assert response.status_code == 200
+```
+
+### Testing with Dependencies
+
+```python
+from fastapi import Depends
+
+def override_dependency():
+    return {"user": "test_user"}
+
+app.dependency_overrides[get_current_user] = override_dependency
+
+def test_with_override():
+    response = client.get("/protected/")
+    assert response.status_code == 200
+```
+
+## Usage Notes
+
+- No need to run a server - tests run synchronously
+- Startup and shutdown events are triggered automatically
+- You can override dependencies for testing
+- Context managers are supported: `with TestClient(app) as client:`
+- WebSocket testing is also supported via `client.websocket_connect()`
+- All requests are synchronous, even if your path operations are async
+
+## Learn More
+
+Read more in the [FastAPI docs for Testing](https://fastapi.tiangolo.com/tutorial/testing/).

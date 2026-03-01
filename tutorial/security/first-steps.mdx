@@ -1,0 +1,260 @@
+---
+title: First Steps with OAuth2
+description: Create your first OAuth2 authentication endpoint with password flow and bearer tokens
+---
+
+Let's start building a real authentication system using OAuth2 with Password flow. This is the most common authentication pattern for modern APIs.
+
+## OAuth2 Password Bearer
+
+First, we'll use `OAuth2PasswordBearer` to tell FastAPI how authentication works in your API.
+
+### Basic Token Extraction
+
+Here's the simplest possible OAuth2 implementation:
+
+```python
+from fastapi import Depends, FastAPI
+from fastapi.security import OAuth2PasswordBearer
+
+app = FastAPI()
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+@app.get("/items/")
+async def read_items(token: str = Depends(oauth2_scheme)):
+    return {"token": token}
+```
+
+<Steps>
+  <Step title="Create the OAuth2 scheme">
+    `OAuth2PasswordBearer(tokenUrl="token")` tells FastAPI:
+    - Tokens are obtained from the `/token` endpoint
+    - The client should send tokens in the `Authorization: Bearer <token>` header
+  </Step>
+  
+  <Step title="Use as a dependency">
+    `token: str = Depends(oauth2_scheme)` tells FastAPI to:
+    - Check for the `Authorization` header
+    - Verify it starts with `Bearer `
+    - Extract the token part
+    - Pass it to your function
+  </Step>
+  
+  <Step title="Automatic OpenAPI integration">
+    Visit `/docs` and you'll see an "Authorize" button. FastAPI automatically added it based on your security scheme!
+  </Step>
+</Steps>
+
+<Warning>
+This code only **extracts** the token—it doesn't validate it! Anyone can send any string and it will be accepted. We'll fix this in the next sections.
+</Warning>
+
+## How OAuth2PasswordBearer Works
+
+When you call the `/items/` endpoint:
+
+<CodeGroup>
+```bash cURL
+curl -X GET "http://localhost:8000/items/" \
+  -H "Authorization: Bearer my_secret_token"
+```
+
+```python Python Requests
+import requests
+
+response = requests.get(
+    "http://localhost:8000/items/",
+    headers={"Authorization": "Bearer my_secret_token"}
+)
+```
+</CodeGroup>
+
+FastAPI will:
+1. Check the `Authorization` header exists
+2. Verify it starts with `Bearer `
+3. Extract `my_secret_token`
+4. Pass it to your function as the `token` parameter
+
+### What if the Header is Missing?
+
+If the `Authorization` header is missing or invalid, FastAPI automatically returns:
+
+```json
+{
+  "detail": "Not authenticated"
+}
+```
+
+With status code `401 Unauthorized` and header `WWW-Authenticate: Bearer`.
+
+## Creating the Login Endpoint
+
+Now let's create the `/token` endpoint that issues tokens. We'll use `OAuth2PasswordRequestForm` to collect the username and password:
+
+```python
+from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+
+app = FastAPI()
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+fake_users_db = {
+    "johndoe": {
+        "username": "johndoe",
+        "full_name": "John Doe",
+        "email": "johndoe@example.com",
+        "hashed_password": "fakehashedsecret",
+        "disabled": False,
+    }
+}
+
+def fake_hash_password(password: str):
+    return "fakehashed" + password
+
+@app.post("/token")
+async def login(form_data: OAuth2PasswordRequestForm = Depends()):
+    user_dict = fake_users_db.get(form_data.username)
+    if not user_dict:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    hashed_password = fake_hash_password(form_data.password)
+    if hashed_password != user_dict["hashed_password"]:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    # In this simple example, we return the username as the token
+    return {"access_token": user_dict["username"], "token_type": "bearer"}
+
+@app.get("/items/")
+async def read_items(token: str = Depends(oauth2_scheme)):
+    return {"token": token}
+```
+
+## Understanding OAuth2PasswordRequestForm
+
+The `OAuth2PasswordRequestForm` is a dependency class that extracts form data from the request:
+
+<ResponseField name="username" type="str" required>
+  The username field (required by OAuth2 spec)
+</ResponseField>
+
+<ResponseField name="password" type="str" required>
+  The password field (required by OAuth2 spec)
+</ResponseField>
+
+<ResponseField name="scope" type="str">
+  Optional scopes separated by spaces (e.g., "items:read items:write")
+</ResponseField>
+
+<ResponseField name="grant_type" type="str">
+  Should be "password" according to OAuth2 spec (but this form is lenient)
+</ResponseField>
+
+<ResponseField name="client_id" type="str">
+  Optional client ID
+</ResponseField>
+
+<ResponseField name="client_secret" type="str">
+  Optional client secret
+</ResponseField>
+
+### Testing the Login
+
+You can test the login endpoint with cURL:
+
+```bash
+curl -X POST "http://localhost:8000/token" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "username=johndoe&password=secret"
+```
+
+Response:
+```json
+{
+  "access_token": "johndoe",
+  "token_type": "bearer"
+}
+```
+
+<Note>
+The OAuth2 specification requires using **form data** (not JSON) for the token endpoint. FastAPI handles this automatically with `OAuth2PasswordRequestForm`.
+</Note>
+
+## Testing in the Docs
+
+Now visit `/docs` and try the authentication flow:
+
+<Steps>
+  <Step title="Click Authorize">
+    Click the "Authorize" button at the top right
+  </Step>
+  
+  <Step title="Enter credentials">
+    Enter username `johndoe` and password `secret`
+  </Step>
+  
+  <Step title="Authorize">
+    Click "Authorize" to save the credentials
+  </Step>
+  
+  <Step title="Test protected endpoints">
+    Now try calling `/items/` - it will automatically include your token!
+  </Step>
+</Steps>
+
+## What We've Built (and What's Missing)
+
+### What Works
+
+✅ OAuth2 password flow
+✅ Token endpoint that validates credentials
+✅ Protected endpoints that require authentication
+✅ Automatic OpenAPI documentation with "Authorize" button
+
+### What's Still Missing
+
+<Warning>
+- **No real password hashing**: We're using `"fakehashed" + password`
+- **No real tokens**: We're returning the username as the token
+- **No token validation**: Any string is accepted as a valid token
+- **No token expiration**: Tokens never expire
+</Warning>
+
+In the next sections, we'll add:
+1. Proper user retrieval and validation
+2. Real JWT tokens with expiration
+3. Password hashing with industry-standard algorithms
+
+## The Token Response Format
+
+According to OAuth2 spec, the token endpoint must return JSON with:
+
+```python
+{
+    "access_token": "<the-token>",
+    "token_type": "bearer"
+}
+```
+
+The `token_type` must be `"bearer"` (lowercase) for OAuth2 password flow.
+
+<Tip>
+You can also return optional fields like `expires_in` (seconds until expiration), `refresh_token`, and `scope`.
+</Tip>
+
+## Next Steps
+
+Now that you understand the basic OAuth2 flow, let's build a proper dependency to get the current authenticated user:
+
+<Card title="Get Current User" icon="user" href="/tutorial/security/get-current-user">
+  Learn how to create a reusable dependency that validates tokens and returns user information
+</Card>

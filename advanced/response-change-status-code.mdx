@@ -1,0 +1,369 @@
+---
+title: "Change Response Status Code"
+description: "Learn how to dynamically change HTTP status codes in FastAPI responses based on business logic"
+---
+
+## Overview
+
+While you typically set a default status code in the path operation decorator, sometimes you need to dynamically change the status code based on your business logic. FastAPI provides flexible ways to handle this.
+
+## Using Response Parameter
+
+The most common way to dynamically change status codes is to inject a `Response` parameter:
+
+```python
+from fastapi import FastAPI, Response, status
+
+app = FastAPI()
+
+tasks = {"foo": "Listen to the Bar Fighters"}
+
+@app.put("/get-or-create-task/{task_id}", status_code=200)
+def get_or_create_task(task_id: str, response: Response):
+    if task_id not in tasks:
+        tasks[task_id] = "This didn't exist before"
+        response.status_code = status.HTTP_201_CREATED
+    return tasks[task_id]
+```
+
+<Info>
+The decorator's `status_code=200` sets the default status code documented in OpenAPI. You can override it at runtime using the `response` parameter.
+</Info>
+
+## Common Status Code Patterns
+
+### Create or Update (Upsert)
+
+Return different status codes for creation vs. update:
+
+```python
+from fastapi import FastAPI, Response, status
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class Item(BaseModel):
+    name: str
+    price: float
+
+items = {}
+
+@app.put("/items/{item_id}", status_code=200)
+def upsert_item(item_id: str, item: Item, response: Response):
+    if item_id not in items:
+        # New item - return 201 Created
+        items[item_id] = item
+        response.status_code = status.HTTP_201_CREATED
+        return item
+    else:
+        # Existing item - return 200 OK
+        items[item_id] = item
+        return item
+```
+
+### Conditional Success
+
+Return different success codes based on the operation result:
+
+```python
+from fastapi import FastAPI, Response, status
+
+app = FastAPI()
+
+@app.post("/process/", status_code=200)
+def process_data(data: dict, response: Response):
+    result = process_complex_operation(data)
+    
+    if result["created_new_resource"]:
+        response.status_code = status.HTTP_201_CREATED
+    elif result["accepted_for_processing"]:
+        response.status_code = status.HTTP_202_ACCEPTED
+    else:
+        response.status_code = status.HTTP_200_OK
+    
+    return result
+```
+
+### Empty Responses
+
+Return 204 No Content for successful operations without data:
+
+```python
+from fastapi import FastAPI, Response, status
+
+app = FastAPI()
+
+items = {"foo": "bar"}
+
+@app.delete("/items/{item_id}", status_code=204)
+def delete_item(item_id: str, response: Response):
+    if item_id in items:
+        del items[item_id]
+        response.status_code = status.HTTP_204_NO_CONTENT
+        return None
+    else:
+        response.status_code = status.HTTP_404_NOT_FOUND
+        return {"message": "Item not found"}
+```
+
+<Warning>
+When returning `204 No Content`, you should not return any response body. Return `None` or an empty `Response` object.
+</Warning>
+
+## Using JSONResponse
+
+Return a `JSONResponse` with a specific status code:
+
+```python
+from fastapi import Body, FastAPI, status
+from fastapi.responses import JSONResponse
+
+app = FastAPI()
+
+items = {
+    "foo": {"name": "Fighters", "size": 6},
+    "bar": {"name": "Tenders", "size": 3}
+}
+
+@app.put("/items/{item_id}")
+async def upsert_item(
+    item_id: str,
+    name: str | None = Body(default=None),
+    size: int | None = Body(default=None),
+):
+    if item_id in items:
+        item = items[item_id]
+        item["name"] = name
+        item["size"] = size
+        return item
+    else:
+        item = {"name": name, "size": size}
+        items[item_id] = item
+        return JSONResponse(
+            status_code=status.HTTP_201_CREATED,
+            content=item
+        )
+```
+
+## Partial Success Scenarios
+
+Handle partial success with appropriate status codes:
+
+```python
+from fastapi import FastAPI, Response, status
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class BatchRequest(BaseModel):
+    items: list[dict]
+
+@app.post("/batch/", status_code=200)
+def batch_process(request: BatchRequest, response: Response):
+    results = []
+    failed_count = 0
+    
+    for item in request.items:
+        try:
+            result = process_item(item)
+            results.append({"status": "success", "data": result})
+        except Exception as e:
+            failed_count += 1
+            results.append({"status": "failed", "error": str(e)})
+    
+    if failed_count == len(request.items):
+        # All failed
+        response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+    elif failed_count > 0:
+        # Partial success
+        response.status_code = status.HTTP_207_MULTI_STATUS
+    else:
+        # All succeeded
+        response.status_code = status.HTTP_200_OK
+    
+    return {"results": results, "failed": failed_count}
+```
+
+## Validation-Based Status Codes
+
+Change status codes based on validation logic:
+
+```python
+from fastapi import FastAPI, Response, status
+from pydantic import BaseModel, validator
+
+app = FastAPI()
+
+class Item(BaseModel):
+    name: str
+    price: float
+    quantity: int
+
+@app.post("/items/", status_code=201)
+def create_item(item: Item, response: Response):
+    # Additional business validation
+    if item.price < 0 or item.quantity < 0:
+        response.status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
+        return {
+            "message": "Price and quantity must be positive",
+            "item": item
+        }
+    
+    # Check stock availability
+    if item.quantity > 100:
+        response.status_code = status.HTTP_202_ACCEPTED
+        return {
+            "message": "Large order accepted for processing",
+            "item": item
+        }
+    
+    # Normal creation
+    return {"message": "Item created", "item": item}
+```
+
+<Tip>
+For validation errors, consider using `HTTPException` with a 422 status code instead of manually changing the response status.
+</Tip>
+
+## Async Operations
+
+Handle async operations with appropriate status codes:
+
+```python
+from fastapi import FastAPI, Response, status
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class Job(BaseModel):
+    task: str
+    priority: str
+
+@app.post("/jobs/", status_code=201)
+async def create_job(job: Job, response: Response):
+    # Check if job requires async processing
+    if job.priority == "low":
+        # Accept for background processing
+        await queue_job_for_processing(job)
+        response.status_code = status.HTTP_202_ACCEPTED
+        return {
+            "message": "Job accepted for processing",
+            "status": "queued"
+        }
+    else:
+        # Process immediately
+        result = await process_job_immediately(job)
+        response.status_code = status.HTTP_201_CREATED
+        return {
+            "message": "Job completed",
+            "status": "completed",
+            "result": result
+        }
+```
+
+## Resource State Changes
+
+Reflect resource state in status codes:
+
+```python
+from fastapi import FastAPI, Response, status
+from enum import Enum
+
+app = FastAPI()
+
+class OrderStatus(str, Enum):
+    PENDING = "pending"
+    CONFIRMED = "confirmed"
+    CANCELLED = "cancelled"
+
+orders = {}
+
+@app.patch("/orders/{order_id}/status", status_code=200)
+def update_order_status(
+    order_id: str,
+    new_status: OrderStatus,
+    response: Response
+):
+    if order_id not in orders:
+        response.status_code = status.HTTP_404_NOT_FOUND
+        return {"message": "Order not found"}
+    
+    old_status = orders[order_id]["status"]
+    
+    # State transition validation
+    if old_status == OrderStatus.CANCELLED:
+        response.status_code = status.HTTP_409_CONFLICT
+        return {"message": "Cannot modify cancelled order"}
+    
+    orders[order_id]["status"] = new_status
+    
+    # Different status codes based on the new state
+    if new_status == OrderStatus.CONFIRMED:
+        response.status_code = status.HTTP_200_OK
+    elif new_status == OrderStatus.CANCELLED:
+        response.status_code = status.HTTP_200_OK
+    
+    return {"message": "Order updated", "order": orders[order_id]}
+```
+
+## Status Code Constants
+
+FastAPI's `status` module provides readable constants:
+
+```python
+from fastapi import status
+
+# Success
+status.HTTP_200_OK
+status.HTTP_201_CREATED
+status.HTTP_202_ACCEPTED
+status.HTTP_204_NO_CONTENT
+status.HTTP_207_MULTI_STATUS
+
+# Redirection
+status.HTTP_301_MOVED_PERMANENTLY
+status.HTTP_302_FOUND
+status.HTTP_304_NOT_MODIFIED
+
+# Client Errors
+status.HTTP_400_BAD_REQUEST
+status.HTTP_401_UNAUTHORIZED
+status.HTTP_403_FORBIDDEN
+status.HTTP_404_NOT_FOUND
+status.HTTP_409_CONFLICT
+status.HTTP_422_UNPROCESSABLE_ENTITY
+
+# Server Errors
+status.HTTP_500_INTERNAL_SERVER_ERROR
+status.HTTP_503_SERVICE_UNAVAILABLE
+```
+
+<Note>
+Using these constants makes your code more readable and helps prevent typos in status code numbers.
+</Note>
+
+## Best Practices
+
+1. **Set sensible defaults**: Use the decorator's `status_code` parameter for the most common case
+2. **Use status constants**: Import and use `status.HTTP_*` constants for better readability
+3. **Document all codes**: Use the `responses` parameter to document all possible status codes
+4. **Be consistent**: Use the same status codes for similar operations across your API
+5. **Follow HTTP semantics**: Use status codes according to their intended meaning
+6. **Prefer Response parameter**: Use `Response` parameter injection for cleaner code
+7. **Return appropriate bodies**: Match response bodies to status codes (e.g., no body for 204)
+8. **Consider HTTPException**: For error cases, `HTTPException` is often cleaner than changing status codes
+
+## Common HTTP Status Codes Guide
+
+- **200 OK**: Standard success response
+- **201 Created**: Resource successfully created
+- **202 Accepted**: Request accepted for processing (async)
+- **204 No Content**: Success with no response body
+- **400 Bad Request**: Invalid request data
+- **401 Unauthorized**: Authentication required
+- **403 Forbidden**: Authenticated but not authorized
+- **404 Not Found**: Resource doesn't exist
+- **409 Conflict**: Request conflicts with current state
+- **422 Unprocessable Entity**: Validation error
+- **500 Internal Server Error**: Server-side error
+- **503 Service Unavailable**: Temporary service unavailability

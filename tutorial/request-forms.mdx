@@ -1,0 +1,285 @@
+---
+title: Request Forms
+description: Learn how to handle HTML form data in FastAPI using the Form() function
+---
+
+When you need to receive form fields instead of JSON, use FastAPI's `Form()` function. This is common for HTML forms and file uploads.
+
+## Installing Dependencies
+
+Form data handling requires the `python-multipart` package:
+
+```bash
+pip install python-multipart
+```
+
+<Warning>
+Make sure to install `python-multipart` before using forms, or you'll get an error when your application starts.
+</Warning>
+
+## Basic Form Example
+
+Use `Form()` to declare form data parameters:
+
+```python
+from fastapi import FastAPI, Form
+
+app = FastAPI()
+
+@app.post("/login/")
+async def login(username: str = Form(), password: str = Form()):
+    return {"username": username}
+```
+
+This endpoint expects form data with `application/x-www-form-urlencoded` or `multipart/form-data` content type.
+
+<Info>
+`Form()` is a class that inherits directly from `Body()`, so it supports the same validation and metadata parameters.
+</Info>
+
+## HTML Form Example
+
+Here's an HTML form that would work with the above endpoint:
+
+```html
+<form action="/login/" method="post">
+  <input type="text" name="username" required>
+  <input type="password" name="password" required>
+  <button type="submit">Login</button>
+</form>
+```
+
+## Form Data vs JSON
+
+<CodeGroup>
+```python Form Data
+from fastapi import Form
+
+@app.post("/login/")
+async def login(
+    username: str = Form(),
+    password: str = Form()
+):
+    return {"username": username}
+# Content-Type: application/x-www-form-urlencoded
+```
+
+```python JSON Body
+from pydantic import BaseModel
+
+class LoginData(BaseModel):
+    username: str
+    password: str
+
+@app.post("/login/")
+async def login(data: LoginData):
+    return {"username": data.username}
+# Content-Type: application/json
+```
+</CodeGroup>
+
+<Note>
+You cannot mix `Form()` and Pydantic model body parameters in the same endpoint. They use different content types and encodings.
+</Note>
+
+## Form Field Validation
+
+`Form()` supports all the same validation parameters as `Query()` and `Body()`:
+
+```python
+from fastapi import FastAPI, Form
+
+app = FastAPI()
+
+@app.post("/register/")
+async def register(
+    username: str = Form(min_length=3, max_length=50),
+    password: str = Form(min_length=8),
+    email: str = Form(pattern=r"^[\w\.-]+@[\w\.-]+\.\w+$"),
+    age: int = Form(ge=18, le=120),
+):
+    return {
+        "username": username,
+        "email": email,
+        "age": age
+    }
+```
+
+<Steps>
+  <Step title="String Validation">
+    Use `min_length`, `max_length`, `pattern` for string fields
+  </Step>
+  
+  <Step title="Numeric Validation">
+    Use `gt`, `ge`, `lt`, `le` for numeric fields
+  </Step>
+  
+  <Step title="Documentation">
+    Add `title`, `description`, `examples` for better docs
+  </Step>
+</Steps>
+
+## Optional Form Fields
+
+Make form fields optional by providing a default value:
+
+```python
+from fastapi import FastAPI, Form
+
+app = FastAPI()
+
+@app.post("/users/")
+async def create_user(
+    username: str = Form(),
+    password: str = Form(),
+    email: str | None = Form(default=None),
+    full_name: str | None = Form(default=None),
+):
+    user_dict = {"username": username}
+    if email:
+        user_dict["email"] = email
+    if full_name:
+        user_dict["full_name"] = full_name
+    return user_dict
+```
+
+## Multiple Form Values
+
+You can receive multiple values for the same form field:
+
+```python
+from fastapi import FastAPI, Form
+
+app = FastAPI()
+
+@app.post("/items/")
+async def create_item(
+    name: str = Form(),
+    tags: list[str] = Form(),
+):
+    return {"name": name, "tags": tags}
+```
+
+HTML form:
+```html
+<form action="/items/" method="post">
+  <input type="text" name="name" value="Item 1">
+  <input type="text" name="tags" value="tag1">
+  <input type="text" name="tags" value="tag2">
+  <input type="text" name="tags" value="tag3">
+  <button type="submit">Submit</button>
+</form>
+```
+
+## Combining Forms and Files
+
+You can mix form fields with file uploads:
+
+```python
+from fastapi import FastAPI, File, Form, UploadFile
+
+app = FastAPI()
+
+@app.post("/files/")
+async def create_file(
+    file: UploadFile = File(),
+    fileb: UploadFile = File(),
+    token: str = Form(),
+    description: str = Form(),
+):
+    return {
+        "file_size": len(await file.read()),
+        "token": token,
+        "description": description,
+        "fileb_content_type": fileb.content_type,
+    }
+```
+
+<Info>
+When you use both `File()` and `Form()` in the same endpoint, the content type will be `multipart/form-data`.
+</Info>
+
+## Form Data Encoding
+
+Form data can be sent in two encodings:
+
+### application/x-www-form-urlencoded
+
+Default encoding for simple forms:
+```
+username=john&password=secret123
+```
+
+### multipart/form-data
+
+Required when uploading files:
+```
+------WebKitFormBoundary
+Content-Disposition: form-data; name="username"
+
+john
+------WebKitFormBoundary
+Content-Disposition: form-data; name="file"; filename="photo.jpg"
+Content-Type: image/jpeg
+
+[binary data]
+------WebKitFormBoundary--
+```
+
+<Tip>
+FastAPI automatically handles both encodings. You don't need to specify which one.
+</Tip>
+
+## Testing with curl
+
+<CodeGroup>
+```bash URL Encoded
+curl -X POST "http://localhost:8000/login/" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "username=john&password=secret123"
+```
+
+```bash Multipart Form
+curl -X POST "http://localhost:8000/login/" \
+  -F "username=john" \
+  -F "password=secret123"
+```
+</CodeGroup>
+
+## Form() Parameters
+
+All parameters available in `Form()`:
+
+- **Validation**: `min_length`, `max_length`, `pattern`, `gt`, `ge`, `lt`, `le`
+- **Documentation**: `title`, `description`, `examples`, `deprecated`
+- **Behavior**: `alias`, `default`, `media_type`
+
+## When to Use Forms
+
+<Steps>
+  <Step title="HTML Forms">
+    Traditional web forms submitting data
+  </Step>
+  
+  <Step title="File Uploads">
+    When combining files with other form data
+  </Step>
+  
+  <Step title="Legacy APIs">
+    Integrating with systems that expect form data
+  </Step>
+  
+  <Step title="OAuth Flows">
+    OAuth2 password flow requires form data
+  </Step>
+</Steps>
+
+<Warning>
+For modern APIs, prefer JSON request bodies with Pydantic models. Use forms only when necessary (file uploads, HTML forms, legacy compatibility).
+</Warning>
+
+## Related Topics
+
+- [Request Files](/tutorial/request-files) - Handle file uploads
+- [Request Body](/tutorial/request-body) - Work with JSON request bodies
+- [Query Parameters](/tutorial/query-parameters) - Handle URL parameters

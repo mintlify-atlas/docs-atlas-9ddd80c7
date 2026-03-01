@@ -1,0 +1,187 @@
+---
+title: status
+description: HTTP status code constants for use in FastAPI applications.
+---
+
+## status
+
+A module containing HTTP status code constants. These constants make your code more readable and maintainable by using descriptive names instead of numeric codes.
+
+```python
+from fastapi import FastAPI, HTTPException, status
+
+app = FastAPI()
+
+@app.get("/items/{item_id}")
+def read_item(item_id: int):
+    if item_id not in items:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Item not found"
+        )
+    return items[item_id]
+
+@app.post("/items/", status_code=status.HTTP_201_CREATED)
+def create_item(item: Item):
+    return item
+```
+
+## Common Status Codes
+
+### Success (2xx)
+
+<ParamField path="HTTP_200_OK" type="int" default="200">
+  Standard response for successful HTTP requests.
+</ParamField>
+
+<ParamField path="HTTP_201_CREATED" type="int" default="201">
+  The request has been fulfilled and a new resource has been created.
+</ParamField>
+
+<ParamField path="HTTP_202_ACCEPTED" type="int" default="202">
+  The request has been accepted for processing, but processing has not been completed.
+</ParamField>
+
+<ParamField path="HTTP_204_NO_CONTENT" type="int" default="204">
+  The server successfully processed the request, but is not returning any content.
+</ParamField>
+
+### Redirection (3xx)
+
+<ParamField path="HTTP_301_MOVED_PERMANENTLY" type="int" default="301">
+  The resource has been moved permanently to a new URL.
+</ParamField>
+
+<ParamField path="HTTP_302_FOUND" type="int" default="302">
+  The resource temporarily resides under a different URL.
+</ParamField>
+
+<ParamField path="HTTP_304_NOT_MODIFIED" type="int" default="304">
+  The resource has not been modified since the last request.
+</ParamField>
+
+<ParamField path="HTTP_307_TEMPORARY_REDIRECT" type="int" default="307">
+  The request should be repeated with another URI, but future requests should use the original URI.
+</ParamField>
+
+### Client Errors (4xx)
+
+<ParamField path="HTTP_400_BAD_REQUEST" type="int" default="400">
+  The server cannot process the request due to a client error (e.g., malformed syntax).
+</ParamField>
+
+<ParamField path="HTTP_401_UNAUTHORIZED" type="int" default="401">
+  Authentication is required and has failed or has not been provided.
+</ParamField>
+
+<ParamField path="HTTP_403_FORBIDDEN" type="int" default="403">
+  The server understood the request but refuses to authorize it.
+</ParamField>
+
+<ParamField path="HTTP_404_NOT_FOUND" type="int" default="404">
+  The requested resource could not be found.
+</ParamField>
+
+<ParamField path="HTTP_405_METHOD_NOT_ALLOWED" type="int" default="405">
+  The method specified in the request is not allowed for the resource.
+</ParamField>
+
+<ParamField path="HTTP_409_CONFLICT" type="int" default="409">
+  The request could not be completed due to a conflict with the current state of the resource.
+</ParamField>
+
+<ParamField path="HTTP_422_UNPROCESSABLE_ENTITY" type="int" default="422">
+  The request was well-formed but contains semantic errors (commonly used for validation errors).
+</ParamField>
+
+<ParamField path="HTTP_429_TOO_MANY_REQUESTS" type="int" default="429">
+  The user has sent too many requests in a given amount of time (rate limiting).
+</ParamField>
+
+### Server Errors (5xx)
+
+<ParamField path="HTTP_500_INTERNAL_SERVER_ERROR" type="int" default="500">
+  A generic error message when the server encounters an unexpected condition.
+</ParamField>
+
+<ParamField path="HTTP_502_BAD_GATEWAY" type="int" default="502">
+  The server received an invalid response from an upstream server.
+</ParamField>
+
+<ParamField path="HTTP_503_SERVICE_UNAVAILABLE" type="int" default="503">
+  The server is currently unable to handle the request (temporarily overloaded or down for maintenance).
+</ParamField>
+
+<ParamField path="HTTP_504_GATEWAY_TIMEOUT" type="int" default="504">
+  The server did not receive a timely response from an upstream server.
+</ParamField>
+
+## WebSocket Status Codes
+
+<ParamField path="WS_1000_NORMAL_CLOSURE" type="int" default="1000">
+  Normal closure; the connection successfully completed.
+</ParamField>
+
+<ParamField path="WS_1001_GOING_AWAY" type="int" default="1001">
+  The endpoint is going away (e.g., server shutdown or browser navigation).
+</ParamField>
+
+<ParamField path="WS_1003_UNSUPPORTED_DATA" type="int" default="1003">
+  The endpoint received data of a type it cannot accept.
+</ParamField>
+
+<ParamField path="WS_1008_POLICY_VIOLATION" type="int" default="1008">
+  The connection was closed because an endpoint received a message that violated its policy.
+</ParamField>
+
+## Usage Examples
+
+### Setting Response Status Code
+
+```python
+@app.post("/items/", status_code=status.HTTP_201_CREATED)
+def create_item(item: Item):
+    # Item creation logic
+    return item
+```
+
+### Raising Exceptions
+
+```python
+from fastapi import HTTPException, status
+
+if not user.is_authenticated:
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Not authenticated",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+```
+
+### Conditional Status Codes
+
+```python
+from fastapi import Response, status
+
+@app.delete("/items/{item_id}")
+def delete_item(item_id: int, response: Response):
+    if item_id in items:
+        del items[item_id]
+        response.status_code = status.HTTP_204_NO_CONTENT
+    else:
+        response.status_code = status.HTTP_404_NOT_FOUND
+    return {"ok": True}
+```
+
+## Usage Notes
+
+- Using named constants improves code readability
+- Makes it easier to understand the intent of status codes at a glance
+- Reduces errors from typos in numeric codes
+- All standard HTTP status codes are available
+- WebSocket status codes are also included with the `WS_` prefix
+- These constants are re-exported from Starlette
+
+## Learn More
+
+Read more in the [FastAPI docs for Response Status Code](https://fastapi.tiangolo.com/tutorial/response-status-code/).

@@ -1,0 +1,105 @@
+---
+title: HTTPException
+description: An HTTP exception to raise in your code to return errors to the client.
+---
+
+## HTTPException
+
+An HTTP exception you can raise in your own code to show errors to the client.
+
+Use this for client errors like invalid authentication, invalid data, or resource not found. This is not for server errors in your code (those should be handled differently).
+
+```python
+from fastapi import FastAPI, HTTPException
+
+app = FastAPI()
+
+items = {"foo": "The Foo Wrestlers"}
+
+@app.get("/items/{item_id}")
+async def read_item(item_id: str):
+    if item_id not in items:
+        raise HTTPException(status_code=404, detail="Item not found")
+    return {"item": items[item_id]}
+```
+
+## Constructor
+
+```python
+HTTPException(
+    status_code: int,
+    detail: Any = None,
+    headers: dict[str, str] | None = None
+)
+```
+
+<ParamField path="status_code" type="int" required>
+  HTTP status code to send to the client (e.g., 404, 401, 403, 400).
+</ParamField>
+
+<ParamField path="detail" type="Any" default="None">
+  Any data to be sent to the client in the `detail` key of the JSON response. This can be a string, dict, list, or any JSON-serializable object.
+</ParamField>
+
+<ParamField path="headers" type="dict[str, str] | None" default="None">
+  Any custom headers to send to the client in the response.
+</ParamField>
+
+## Response Format
+
+When raised, HTTPException returns a JSON response with this structure:
+
+```json
+{
+  "detail": "Your error message or data"
+}
+```
+
+## Common Use Cases
+
+### 404 Not Found
+
+```python
+if item_id not in items:
+    raise HTTPException(status_code=404, detail="Item not found")
+```
+
+### 401 Unauthorized
+
+```python
+if not valid_credentials:
+    raise HTTPException(
+        status_code=401,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+```
+
+### 403 Forbidden
+
+```python
+if not user.has_permission:
+    raise HTTPException(status_code=403, detail="Not enough permissions")
+```
+
+### 400 Bad Request
+
+```python
+if not valid_data:
+    raise HTTPException(
+        status_code=400,
+        detail={"error": "Invalid input", "field": "email"}
+    )
+```
+
+## Usage Notes
+
+- Can be raised from anywhere in your path operation or dependencies
+- The exception is automatically caught by FastAPI and converted to a proper HTTP response
+- Use appropriate status codes from the `status` module for better code readability
+- The `detail` parameter supports any JSON-serializable data structure
+- Custom headers are useful for authentication challenges or additional metadata
+
+## Learn More
+
+Read more in the [FastAPI docs for Handling Errors](https://fastapi.tiangolo.com/tutorial/handling-errors/).

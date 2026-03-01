@@ -1,0 +1,361 @@
+---
+title: Request Files
+description: Learn how to handle file uploads in FastAPI using File() and UploadFile
+---
+
+FastAPI makes it easy to handle file uploads using `File()` for small files and `UploadFile` for larger files with better memory management.
+
+## Installing Dependencies
+
+File upload handling requires the `python-multipart` package:
+
+```bash
+pip install python-multipart
+```
+
+<Warning>
+Without `python-multipart`, file uploads won't work and you'll get an error at startup.
+</Warning>
+
+## Upload File as Bytes
+
+For small files, you can receive them as `bytes`:
+
+```python
+from fastapi import FastAPI, File
+
+app = FastAPI()
+
+@app.post("/files/")
+async def create_file(file: bytes = File()):
+    return {"file_size": len(file)}
+```
+
+<Info>
+The entire file content is stored in memory as `bytes`. This is fine for small files but not recommended for large uploads.
+</Info>
+
+## Upload File with UploadFile
+
+`UploadFile` provides better performance and more features:
+
+```python
+from fastapi import FastAPI, UploadFile
+
+app = FastAPI()
+
+@app.post("/uploadfile/")
+async def create_upload_file(file: UploadFile):
+    return {"filename": file.filename}
+```
+
+### UploadFile Advantages
+
+<Steps>
+  <Step title="Memory Efficient">
+    Files are spooled to disk after exceeding a size limit, saving RAM
+  </Step>
+  
+  <Step title="Metadata Access">
+    Access filename, content type, and other file metadata
+  </Step>
+  
+  <Step title="Async Read/Write">
+    Built-in async methods for reading file content
+  </Step>
+  
+  <Step title="File-like Interface">
+    Works like a Python file object
+  </Step>
+</Steps>
+
+## UploadFile Attributes and Methods
+
+```python
+from fastapi import FastAPI, UploadFile
+
+app = FastAPI()
+
+@app.post("/files/")
+async def create_file(file: UploadFile):
+    contents = await file.read()  # Read entire file
+    
+    return {
+        "filename": file.filename,        # Original filename
+        "content_type": file.content_type,  # MIME type
+        "size": len(contents)
+    }
+```
+
+### Available Methods
+
+- `await file.read()`: Read entire file content
+- `await file.read(size)`: Read up to `size` bytes
+- `await file.seek(position)`: Move to a specific position
+- `await file.write(data)`: Write data to file
+- `await file.close()`: Close the file
+
+<Tip>
+Always use `await` when calling these methods since they're asynchronous.
+</Tip>
+
+## Multiple File Uploads
+
+Handle multiple files using lists:
+
+```python
+from fastapi import FastAPI, File, UploadFile
+from fastapi.responses import HTMLResponse
+
+app = FastAPI()
+
+@app.post("/files/")
+async def create_files(files: list[bytes] = File()):
+    return {"file_sizes": [len(file) for file in files]}
+
+@app.post("/uploadfiles/")
+async def create_upload_files(files: list[UploadFile]):
+    return {"filenames": [file.filename for file in files]}
+
+@app.get("/")
+async def main():
+    content = """
+<body>
+<form action="/files/" enctype="multipart/form-data" method="post">
+<input name="files" type="file" multiple>
+<input type="submit">
+</form>
+<form action="/uploadfiles/" enctype="multipart/form-data" method="post">
+<input name="files" type="file" multiple>
+<input type="submit">
+</form>
+</body>
+    """
+    return HTMLResponse(content=content)
+```
+
+<CodeGroup>
+```python Using bytes
+files: list[bytes] = File()
+# All files loaded into memory
+```
+
+```python Using UploadFile
+files: list[UploadFile]
+# Memory efficient, recommended
+```
+</CodeGroup>
+
+## Optional File Upload
+
+Make file uploads optional:
+
+```python
+from fastapi import FastAPI, File, UploadFile
+
+app = FastAPI()
+
+@app.post("/files/")
+async def create_file(file: UploadFile | None = None):
+    if not file:
+        return {"message": "No file sent"}
+    
+    return {"filename": file.filename}
+```
+
+## File Upload with Additional Metadata
+
+Combine file uploads with form data:
+
+```python
+from fastapi import FastAPI, File, Form, UploadFile
+
+app = FastAPI()
+
+@app.post("/files/")
+async def create_file(
+    file: UploadFile = File(),
+    token: str = Form(),
+    description: str | None = Form(default=None),
+):
+    contents = await file.read()
+    
+    return {
+        "filename": file.filename,
+        "content_type": file.content_type,
+        "size": len(contents),
+        "token": token,
+        "description": description,
+    }
+```
+
+<Note>
+When mixing `File()` and `Form()`, the request must use `multipart/form-data` encoding.
+</Note>
+
+## Processing Uploaded Files
+
+### Save to Disk
+
+```python
+from fastapi import FastAPI, UploadFile
+import aiofiles
+
+app = FastAPI()
+
+@app.post("/upload/")
+async def upload_file(file: UploadFile):
+    async with aiofiles.open(f"uploads/{file.filename}", "wb") as f:
+        content = await file.read()
+        await f.write(content)
+    
+    return {"filename": file.filename, "message": "File saved"}
+```
+
+### Stream Large Files
+
+```python
+from fastapi import FastAPI, UploadFile
+
+app = FastAPI()
+
+@app.post("/upload/")
+async def upload_large_file(file: UploadFile):
+    # Read and process in chunks
+    chunk_size = 1024 * 1024  # 1MB chunks
+    total_size = 0
+    
+    while chunk := await file.read(chunk_size):
+        # Process chunk (e.g., hash, upload to S3, etc.)
+        total_size += len(chunk)
+    
+    return {
+        "filename": file.filename,
+        "total_size": total_size
+    }
+```
+
+### Validate File Type
+
+```python
+from fastapi import FastAPI, HTTPException, UploadFile
+
+app = FastAPI()
+
+ALLOWED_TYPES = ["image/jpeg", "image/png", "image/gif"]
+
+@app.post("/upload/")
+async def upload_image(file: UploadFile):
+    if file.content_type not in ALLOWED_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File type not allowed. Must be one of: {ALLOWED_TYPES}"
+        )
+    
+    return {"filename": file.filename, "type": file.content_type}
+```
+
+<Warning>
+Always validate file types and sizes on the server side. Never trust client-provided MIME types alone.
+</Warning>
+
+## File Size Limits
+
+While `UploadFile` doesn't have built-in size limits, you can implement them:
+
+```python
+from fastapi import FastAPI, HTTPException, UploadFile
+
+app = FastAPI()
+
+MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
+
+@app.post("/upload/")
+async def upload_file(file: UploadFile):
+    contents = await file.read()
+    
+    if len(contents) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large. Maximum size: {MAX_FILE_SIZE} bytes"
+        )
+    
+    return {
+        "filename": file.filename,
+        "size": len(contents)
+    }
+```
+
+## File() Parameters
+
+The `File()` function supports validation and documentation:
+
+```python
+from fastapi import FastAPI, File, UploadFile
+
+app = FastAPI()
+
+@app.post("/upload/")
+async def upload_file(
+    file: UploadFile = File(
+        description="A file to upload",
+        examples=["image.jpg", "document.pdf"]
+    )
+):
+    return {"filename": file.filename}
+```
+
+## Testing File Uploads
+
+<CodeGroup>
+```bash Using curl
+curl -X POST "http://localhost:8000/upload/" \
+  -H "Content-Type: multipart/form-data" \
+  -F "file=@/path/to/file.jpg"
+```
+
+```python Using httpx
+import httpx
+
+with open("test.jpg", "rb") as f:
+    response = httpx.post(
+        "http://localhost:8000/upload/",
+        files={"file": ("test.jpg", f, "image/jpeg")}
+    )
+```
+
+```python Using TestClient
+from fastapi.testclient import TestClient
+
+def test_upload():
+    client = TestClient(app)
+    
+    with open("test.jpg", "rb") as f:
+        response = client.post(
+            "/upload/",
+            files={"file": ("test.jpg", f, "image/jpeg")}
+        )
+    
+    assert response.status_code == 200
+```
+</CodeGroup>
+
+## Key Differences: File vs UploadFile
+
+| Feature | File (bytes) | UploadFile |
+|---------|-------------|------------|
+| Memory Usage | Entire file in RAM | Spooled to disk |
+| Best For | Small files | Large files |
+| Metadata | No | Yes (filename, content_type) |
+| Async Support | No | Yes |
+| Performance | Lower for large files | Better |
+
+<Tip>
+Use `UploadFile` by default unless you have a specific reason to use `bytes`.
+</Tip>
+
+## Related Topics
+
+- [Request Forms](/tutorial/request-forms) - Handle form data with files
+- [Request Body](/tutorial/request-body) - Work with JSON request bodies
+- [Response Model](/tutorial/response-model) - Define response schemas

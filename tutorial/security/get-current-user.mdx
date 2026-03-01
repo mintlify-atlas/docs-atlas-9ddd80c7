@@ -1,0 +1,362 @@
+---
+title: Get Current User
+description: Create a dependency for getting the current authenticated user from the token
+---
+
+Now let's create a proper dependency that validates tokens and returns the authenticated user. This is a crucial pattern you'll use throughout your application.
+
+## The User Model
+
+First, let's define proper Pydantic models for our users:
+
+```python
+from pydantic import BaseModel
+
+class User(BaseModel):
+    username: str
+    email: str | None = None
+    full_name: str | None = None
+    disabled: bool | None = None
+
+class UserInDB(User):
+    hashed_password: str
+```
+
+<Note>
+`UserInDB` inherits from `User` and adds the `hashed_password` field. We never return this model directly—it's only for internal use.
+</Note>
+
+## Creating the get_current_user Dependency
+
+Now let's create a dependency that converts a token into a user:
+
+```python
+from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from pydantic import BaseModel
+
+app = FastAPI()
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+class User(BaseModel):
+    username: str
+    email: str | None = None
+    full_name: str | None = None
+    disabled: bool | None = None
+
+class UserInDB(User):
+    hashed_password: str
+
+fake_users_db = {
+    "johndoe": {
+        "username": "johndoe",
+        "full_name": "John Doe",
+        "email": "johndoe@example.com",
+        "hashed_password": "fakehashedsecret",
+        "disabled": False,
+    },
+    "alice": {
+        "username": "alice",
+        "full_name": "Alice Wonderson",
+        "email": "alice@example.com",
+        "hashed_password": "fakehashedsecret2",
+        "disabled": True,
+    },
+}
+
+def get_user(db, username: str):
+    if username in db:
+        user_dict = db[username]
+        return UserInDB(**user_dict)
+
+def fake_decode_token(token):
+    # This doesn't provide any security at all
+    # Check the next tutorial for proper JWT decoding
+    user = get_user(fake_users_db, token)
+    return user
+
+async def get_current_user(token: str = Depends(oauth2_scheme)):
+    user = fake_decode_token(token)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return user
+
+@app.get("/users/me")
+async def read_users_me(current_user: User = Depends(get_current_user)):
+    return current_user
+```
+
+## How the Dependency Chain Works
+
+This is where FastAPI's dependency injection really shines:
+
+<Steps>
+  <Step title="OAuth2 scheme extracts the token">
+    `oauth2_scheme` extracts the token from the `Authorization: Bearer <token>` header
+  </Step>
+  
+  <Step title="get_current_user receives the token">
+    `get_current_user` depends on `oauth2_scheme`, so it receives the extracted token
+  </Step>
+  
+  <Step title="Token is decoded to find the user">
+    `fake_decode_token` looks up the user based on the token
+  </Step>
+  
+  <Step title="User is returned">
+    If valid, the `User` object is returned. If invalid, an HTTPException is raised
+  </Step>
+  
+  <Step title="Path operation receives the user">
+    Your path operation receives the validated `current_user` object
+  </Step>
+</Steps>
+
+### Dependency Diagram
+
+```
+/users/me endpoint
+       ↓
+   get_current_user
+       ↓
+   oauth2_scheme
+       ↓
+ Authorization header
+```
+
+## Adding an Active User Check
+
+Let's add another dependency layer to check if the user account is active:
+
+```python
+async def get_current_active_user(
+    current_user: User = Depends(get_current_user)
+):
+    if current_user.disabled:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Inactive user"
+        )
+    return current_user
+
+@app.get("/users/me")
+async def read_users_me(current_user: User = Depends(get_current_active_user)):
+    return current_user
+```
+
+Now the dependency chain is:
+
+```
+/users/me endpoint
+       ↓
+get_current_active_user
+       ↓
+   get_current_user
+       ↓
+   oauth2_scheme
+       ↓
+ Authorization header
+```
+
+<Tip>
+This pattern of chaining dependencies is very powerful. Each dependency handles one specific concern:
+- `oauth2_scheme`: Extract the token
+- `get_current_user`: Validate the token and get the user
+- `get_current_active_user`: Check if the user is active
+</Tip>
+
+## Complete Example with Login
+
+Here's the complete working example:
+
+```python
+from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from pydantic import BaseModel
+
+app = FastAPI()
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+class User(BaseModel):
+    username: str
+    email: str | None = None
+    full_name: str | None = None
+    disabled: bool | None = None
+
+class UserInDB(User):
+    hashed_password: str
+
+fake_users_db = {
+    "johndoe": {
+        "username": "johndoe",
+        "full_name": "John Doe",
+        "email": "johndoe@example.com",
+        "hashed_password": "fakehashedsecret",
+        "disabled": False,
+    }
+}
+
+def fake_hash_password(password: str):
+    return "fakehashed" + password
+
+def get_user(db, username: str):
+    if username in db:
+        user_dict = db[username]
+        return UserInDB(**user_dict)
+
+def fake_decode_token(token):
+    user = get_user(fake_users_db, token)
+    return user
+
+async def get_current_user(token: str = Depends(oauth2_scheme)):
+    user = fake_decode_token(token)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return user
+
+async def get_current_active_user(
+    current_user: User = Depends(get_current_user)
+):
+    if current_user.disabled:
+        raise HTTPException(status_code=400, detail="Inactive user")
+    return current_user
+
+@app.post("/token")
+async def login(form_data: OAuth2PasswordRequestForm = Depends()):
+    user_dict = fake_users_db.get(form_data.username)
+    if not user_dict:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password"
+        )
+    
+    user = UserInDB(**user_dict)
+    hashed_password = fake_hash_password(form_data.password)
+    if hashed_password != user.hashed_password:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password"
+        )
+    
+    return {"access_token": user.username, "token_type": "bearer"}
+
+@app.get("/users/me")
+async def read_users_me(current_user: User = Depends(get_current_active_user)):
+    return current_user
+```
+
+## Testing the Flow
+
+<Steps>
+  <Step title="Get a token">
+    ```bash
+    curl -X POST "http://localhost:8000/token" \
+      -H "Content-Type: application/x-www-form-urlencoded" \
+      -d "username=johndoe&password=secret"
+    ```
+    
+    Response:
+    ```json
+    {"access_token": "johndoe", "token_type": "bearer"}
+    ```
+  </Step>
+  
+  <Step title="Use the token to access protected endpoints">
+    ```bash
+    curl -X GET "http://localhost:8000/users/me" \
+      -H "Authorization: Bearer johndoe"
+    ```
+    
+    Response:
+    ```json
+    {
+      "username": "johndoe",
+      "email": "johndoe@example.com",
+      "full_name": "John Doe",
+      "disabled": false
+    }
+    ```
+  </Step>
+  
+  <Step title="Try with an inactive user">
+    First get alice's token, then try to use it:
+    ```bash
+    curl -X GET "http://localhost:8000/users/me" \
+      -H "Authorization: Bearer alice"
+    ```
+    
+    Response:
+    ```json
+    {"detail": "Inactive user"}
+    ```
+  </Step>
+</Steps>
+
+## What's Still Missing?
+
+<Warning>
+This implementation still has security issues:
+
+- **Fake token decoding**: We're treating the token as a username
+- **No password hashing**: Using `"fakehashed" + password`
+- **No token expiration**: Tokens never expire
+- **No cryptographic signing**: Anyone can forge tokens
+</Warning>
+
+Let's fix all of these issues in the next section!
+
+## Reusing the get_current_user Dependency
+
+The beauty of this pattern is that you can use `get_current_user` or `get_current_active_user` in any endpoint:
+
+```python
+@app.get("/items/")
+async def read_items(current_user: User = Depends(get_current_active_user)):
+    return [{"item_id": "Foo", "owner": current_user.username}]
+
+@app.get("/users/{username}")
+async def read_user(
+    username: str,
+    current_user: User = Depends(get_current_active_user)
+):
+    # current_user is automatically populated from the token
+    if current_user.username != username:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    return current_user
+```
+
+## Type Hints and Editor Support
+
+Notice how we use type hints:
+
+```python
+async def read_users_me(current_user: User = Depends(get_current_active_user)):
+    return current_user
+```
+
+Your editor knows that `current_user` is a `User` object, so you get:
+- ✅ Autocompletion
+- ✅ Type checking
+- ✅ Inline documentation
+
+<Tip>
+FastAPI uses these type hints to automatically generate OpenAPI schemas, so your API documentation shows the correct response models.
+</Tip>
+
+## Next Steps
+
+Now let's implement proper security with JWT tokens and password hashing:
+
+<Card title="OAuth2 with JWT" icon="shield-check" href="/tutorial/security/oauth2-jwt">
+  Learn how to implement proper JWT token authentication with secure password hashing
+</Card>

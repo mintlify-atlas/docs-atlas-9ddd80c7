@@ -1,0 +1,391 @@
+---
+title: 'Dependencies in Path Operations'
+description: 'Learn how to use dependencies at the path operation decorator level for validation, side effects, and shared logic without using the return value'
+---
+
+# Dependencies in Path Operations
+
+Sometimes you need to run dependencies for their **side effects** rather than their return values. FastAPI allows you to declare dependencies directly in the path operation decorator, perfect for validation, logging, authentication checks, and other tasks where you don't need the result.
+
+## The `dependencies` Parameter
+
+Path operation decorators accept a `dependencies` parameter that takes a list of dependencies:
+
+```python
+from fastapi import Depends, FastAPI, Header, HTTPException
+
+app = FastAPI()
+
+
+async def verify_token(x_token: str = Header()):
+    if x_token != "fake-super-secret-token":
+        raise HTTPException(status_code=400, detail="X-Token header invalid")
+
+
+async def verify_key(x_key: str = Header()):
+    if x_key != "fake-super-secret-key":
+        raise HTTPException(status_code=400, detail="X-Key header invalid")
+    return x_key
+
+
+@app.get("/items/", dependencies=[Depends(verify_token), Depends(verify_key)])
+async def read_items():
+    return [{"item": "Foo"}, {"item": "Bar"}]
+```
+
+### Key Characteristics
+
+<Info>
+- Dependencies are executed **before** the path operation function
+- Their return values are **discarded** (not passed to your function)
+- If any dependency raises an exception, the path operation is **not executed**
+- Multiple dependencies execute in the order they're declared
+</Info>
+
+## When to Use Path-Level Dependencies
+
+Use `dependencies` parameter when you need:
+
+### 1. Authentication/Authorization Checks
+
+```python
+def require_authentication(token: str = Header()):
+    if not is_valid_token(token):
+        raise HTTPException(status_code=401, detail="Invalid authentication")
+    # Return value doesn't matter
+
+
+@app.post("/admin/users/", dependencies=[Depends(require_authentication)])
+async def create_user(user: User):
+    return {"user": user}
+```
+
+<Note>
+You don't need the token value in the path operation, you just need to verify it exists and is valid.
+</Note>
+
+### 2. Rate Limiting
+
+```python
+def rate_limit(request: Request):
+    client_ip = request.client.host
+    if is_rate_limited(client_ip):
+        raise HTTPException(status_code=429, detail="Too many requests")
+
+
+@app.get("/api/data/", dependencies=[Depends(rate_limit)])
+async def get_data():
+    return {"data": "sensitive information"}
+```
+
+### 3. Logging and Monitoring
+
+```python
+def log_request(request: Request):
+    logger.info(f"Request to {request.url} from {request.client.host}")
+
+
+@app.post("/important/", dependencies=[Depends(log_request)])
+async def important_operation(data: dict):
+    return process_important_data(data)
+```
+
+### 4. Input Validation
+
+```python
+def validate_content_type(content_type: str = Header()):
+    if content_type != "application/json":
+        raise HTTPException(
+            status_code=400,
+            detail="Content-Type must be application/json"
+        )
+
+
+@app.post("/data/", dependencies=[Depends(validate_content_type)])
+async def receive_data(payload: dict):
+    return {"received": payload}
+```
+
+## Multiple Dependencies
+
+You can specify multiple dependencies, and they execute in order:
+
+```python
+async def verify_token(x_token: str = Header()):
+    if x_token != "fake-super-secret-token":
+        raise HTTPException(status_code=400, detail="X-Token header invalid")
+    print("Token verified")
+
+
+async def verify_key(x_key: str = Header()):
+    if x_key != "fake-super-secret-key":
+        raise HTTPException(status_code=400, detail="X-Key header invalid")
+    print("Key verified")
+
+
+async def log_access():
+    print("Access logged")
+
+
+@app.get(
+    "/secure/",
+    dependencies=[
+        Depends(verify_token),
+        Depends(verify_key),
+        Depends(log_access)
+    ]
+)
+async def secure_endpoint():
+    return {"message": "Access granted"}
+```
+
+### Execution Flow
+
+<Steps>
+
+<Step title="First dependency executes">
+`verify_token` checks the token. If it fails, an exception is raised and execution stops.
+</Step>
+
+<Step title="Second dependency executes">
+`verify_key` checks the key. If it fails, an exception is raised and execution stops.
+</Step>
+
+<Step title="Third dependency executes">
+`log_access` logs the access attempt.
+</Step>
+
+<Step title="Path operation executes">
+Only if all dependencies succeed does the path operation function run.
+</Step>
+
+</Steps>
+
+## Combining with Function-Level Dependencies
+
+You can use both path-level and function-level dependencies together:
+
+```python
+def verify_admin(x_role: str = Header()):
+    if x_role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+
+def get_current_user(token: str = Header()):
+    user = decode_token(token)
+    return user
+
+
+@app.delete("/users/{user_id}", dependencies=[Depends(verify_admin)])
+async def delete_user(
+    user_id: int,
+    current_user = Depends(get_current_user)  # We need this value
+):
+    # verify_admin already checked, we don't need its return value
+    # But we do need current_user for logging
+    log_deletion(current_user, user_id)
+    return {"deleted": user_id}
+```
+
+## Dependencies with Sub-Dependencies
+
+Path-level dependencies can have their own sub-dependencies:
+
+```python
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+def verify_api_quota(db = Depends(get_db), api_key: str = Header()):
+    quota = db.query(ApiQuota).filter_by(key=api_key).first()
+    if not quota or quota.remaining <= 0:
+        raise HTTPException(status_code=403, detail="API quota exceeded")
+    quota.remaining -= 1
+    db.commit()
+
+
+@app.get("/api/expensive/", dependencies=[Depends(verify_api_quota)])
+async def expensive_operation():
+    return perform_expensive_computation()
+```
+
+<Warning>
+Even though the dependency return value is discarded, all sub-dependencies still execute normally, including cleanup code from dependencies that use `yield`.
+</Warning>
+
+## Dependency Groups for Reusability
+
+You can create reusable dependency lists:
+
+```python
+# Common security checks
+security_deps = [
+    Depends(verify_token),
+    Depends(verify_key),
+    Depends(rate_limit)
+]
+
+# Apply to multiple routes
+@app.get("/secure/data/", dependencies=security_deps)
+async def get_secure_data():
+    return {"data": "secret"}
+
+
+@app.post("/secure/data/", dependencies=security_deps)
+async def post_secure_data(data: dict):
+    return {"received": data}
+
+
+@app.delete("/secure/data/{item_id}", dependencies=security_deps)
+async def delete_secure_data(item_id: int):
+    return {"deleted": item_id}
+```
+
+## Error Handling
+
+When a path-level dependency raises an exception, the path operation never executes:
+
+```python
+def strict_validation(value: int = Header()):
+    if value < 0:
+        raise HTTPException(status_code=400, detail="Value must be non-negative")
+    if value > 100:
+        raise HTTPException(status_code=400, detail="Value must not exceed 100")
+
+
+@app.get("/validated/", dependencies=[Depends(strict_validation)])
+async def validated_endpoint():
+    # This only runs if strict_validation succeeds
+    return {"message": "Validation passed"}
+```
+
+## Path Operations vs. Routers
+
+Dependencies at the path operation level only affect that specific endpoint. For broader application, see global dependencies.
+
+```python
+from fastapi import APIRouter
+
+# Path-level: affects only this endpoint
+@app.get("/items/", dependencies=[Depends(verify_token)])
+async def get_items():
+    return []
+
+# Router-level: affects all routes in the router (covered in global dependencies)
+router = APIRouter(dependencies=[Depends(verify_token)])
+```
+
+## Real-World Example: API Gateway Pattern
+
+Here's a comprehensive example showing multiple path-level dependencies:
+
+```python
+from datetime import datetime
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
+
+app = FastAPI()
+
+# Track request IDs for distributed tracing
+request_log = {}
+
+
+def assign_request_id(request: Request):
+    request_id = str(uuid.uuid4())
+    request.state.request_id = request_id
+    request_log[request_id] = {
+        "timestamp": datetime.now(),
+        "path": request.url.path
+    }
+
+
+def verify_api_version(api_version: str = Header(alias="X-API-Version")):
+    if api_version not in ["1.0", "2.0"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported API version: {api_version}"
+        )
+
+
+def check_maintenance_mode():
+    if is_maintenance_mode():
+        raise HTTPException(
+            status_code=503,
+            detail="Service temporarily unavailable for maintenance"
+        )
+
+
+@app.get(
+    "/api/users/",
+    dependencies=[
+        Depends(assign_request_id),
+        Depends(check_maintenance_mode),
+        Depends(verify_api_version),
+    ]
+)
+async def list_users(request: Request):
+    # All dependencies passed, we have a request_id assigned
+    request_id = request.state.request_id
+    return {
+        "request_id": request_id,
+        "users": get_users()
+    }
+```
+
+## Performance Considerations
+
+<Info>
+Path-level dependencies are subject to the same caching rules as function-level dependencies. If the same dependency appears multiple times in a request (even at different levels), it's only executed once by default.
+</Info>
+
+```python
+def expensive_check():
+    # This runs only once per request
+    print("Running expensive check")
+    return perform_expensive_validation()
+
+
+@app.get(
+    "/endpoint1/",
+    dependencies=[Depends(expensive_check)]
+)
+async def endpoint1(result = Depends(expensive_check)):
+    # expensive_check runs only once, result is cached
+    return {"result": result}
+```
+
+## Best Practices
+
+<Steps>
+
+<Step title="Use for side effects only">
+If you need the return value, use function-level dependencies instead of path-level.
+</Step>
+
+<Step title="Keep dependencies pure">
+Path-level dependencies should be independent and not rely on order except when necessary.
+</Step>
+
+<Step title="Group related dependencies">
+Create reusable lists of related dependencies for consistency across endpoints.
+</Step>
+
+<Step title="Document the requirements">
+Make it clear in your API documentation which headers or parameters are needed by path-level dependencies.
+</Step>
+
+<Step title="Handle errors gracefully">
+Provide clear error messages when path-level dependencies fail so clients know what went wrong.
+</Step>
+
+</Steps>
+
+## Next Steps
+
+Learn about:
+- Global dependencies that apply to your entire application or router groups
+- Advanced dependency patterns for testing and overrides
+- Using dependencies with WebSocket connections

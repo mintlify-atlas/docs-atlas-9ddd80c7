@@ -1,0 +1,441 @@
+---
+title: FastAPI in Containers - Docker
+description: Build and deploy FastAPI applications using Docker containers with best practices and multi-stage builds.
+---
+
+When deploying FastAPI applications, a common approach is to build a **Linux container image** using **Docker**. Containers provide security, replicability, and simplicity.
+
+## Why Use Docker?
+
+Using Linux containers offers several advantages:
+
+- **Security** - Isolated environments with controlled dependencies
+- **Replicability** - Consistent behavior across development and production
+- **Simplicity** - Easy to deploy and scale
+- **Portability** - Run anywhere Docker is supported
+
+<Tip>
+  If you're already familiar with Docker, jump to the [Dockerfile example](#basic-dockerfile).
+</Tip>
+
+## Container Concepts
+
+### What is a Container?
+
+Containers are a **lightweight** way to package applications with all dependencies while keeping them isolated from other containers.
+
+- Run using the same Linux kernel as the host
+- Consume minimal resources compared to virtual machines
+- Have isolated processes, file systems, and networks
+- Typically run a single process
+
+### Container Image vs. Container
+
+**Container Image**:
+- Static snapshot of files, environment variables, and default commands
+- Like a program file (e.g., `python` executable)
+- Not running, just stored
+
+**Container**:
+- Running instance of a container image
+- Like a running process
+- Exists only while a process is running
+
+<Info>
+  A container image is to a container what a program is to a process.
+</Info>
+
+## Basic Dockerfile
+
+Here's a production-ready Dockerfile for FastAPI:
+
+```dockerfile
+FROM python:3.12
+
+WORKDIR /code
+
+COPY ./requirements.txt /code/requirements.txt
+
+RUN pip install --no-cache-dir --upgrade -r /code/requirements.txt
+
+COPY ./app /code/app
+
+CMD ["fastapi", "run", "app/main.py", "--port", "80"]
+```
+
+### Explanation
+
+<Steps>
+  <Step title="Base Image">
+    ```dockerfile
+    FROM python:3.12
+    ```
+    Start from the official Python base image. Use a specific version for consistency.
+  </Step>
+  
+  <Step title="Working Directory">
+    ```dockerfile
+    WORKDIR /code
+    ```
+    Set the working directory where commands will run.
+  </Step>
+  
+  <Step title="Copy Requirements">
+    ```dockerfile
+    COPY ./requirements.txt /code/requirements.txt
+    ```
+    Copy only requirements first to leverage Docker cache.
+  </Step>
+  
+  <Step title="Install Dependencies">
+    ```dockerfile
+    RUN pip install --no-cache-dir --upgrade -r /code/requirements.txt
+    ```
+    Install packages. `--no-cache-dir` reduces image size.
+  </Step>
+  
+  <Step title="Copy Application">
+    ```dockerfile
+    COPY ./app /code/app
+    ```
+    Copy application code last (changes most frequently).
+  </Step>
+  
+  <Step title="Run Command">
+    ```dockerfile
+    CMD ["fastapi", "run", "app/main.py", "--port", "80"]
+    ```
+    Use exec form (array syntax) for proper signal handling.
+  </Step>
+</Steps>
+
+<Warning>
+  Always use the **exec form** of CMD (array syntax) to ensure FastAPI can shutdown gracefully and lifespan events are triggered properly.
+</Warning>
+
+## Project Structure
+
+Your project should look like this:
+
+```
+.
+├── app
+│   ├── __init__.py
+│   └── main.py
+├── Dockerfile
+└── requirements.txt
+```
+
+### Example Application
+
+**app/main.py**:
+```python
+from fastapi import FastAPI
+
+app = FastAPI()
+
+@app.get("/")
+def read_root():
+    return {"Hello": "World"}
+
+@app.get("/items/{item_id}")
+def read_item(item_id: int, q: str | None = None):
+    return {"item_id": item_id, "q": q}
+```
+
+**requirements.txt**:
+```
+fastapi[standard]>=0.115.0,<0.116.0
+```
+
+## Building and Running
+
+### Build the Image
+
+```bash
+docker build -t myapp .
+```
+
+<Note>
+  The `.` at the end tells Docker to use the current directory as the build context.
+</Note>
+
+### Run the Container
+
+```bash
+docker run -d --name mycontainer -p 80:80 myapp
+```
+
+Your API is now available at `http://localhost/`.
+
+### Test the API
+
+```bash
+curl http://localhost/items/5?q=test
+# Output: {"item_id": 5, "q": "test"}
+```
+
+Access interactive docs at:
+- Swagger UI: `http://localhost/docs`
+- ReDoc: `http://localhost/redoc`
+
+## Behind a Reverse Proxy
+
+If running behind a TLS termination proxy (Nginx, Traefik, etc.), add `--proxy-headers`:
+
+```dockerfile
+CMD ["fastapi", "run", "app/main.py", "--port", "80", "--proxy-headers"]
+```
+
+This tells Uvicorn to trust headers from the proxy about the original client and HTTPS status.
+
+<Info>
+  The `--proxy-headers` flag enables proper handling of `X-Forwarded-For`, `X-Forwarded-Proto`, and `X-Forwarded-Host` headers.
+</Info>
+
+## Docker Cache Optimization
+
+The order of instructions matters for build speed:
+
+```dockerfile
+# ✅ Copy requirements first (changes rarely)
+COPY ./requirements.txt /code/requirements.txt
+RUN pip install --no-cache-dir --upgrade -r /code/requirements.txt
+
+# ✅ Copy code last (changes frequently)
+COPY ./app /code/app
+```
+
+This leverages Docker's layer caching:
+- Dependencies are cached and reused unless `requirements.txt` changes
+- Code changes don't trigger dependency reinstalls
+- **Saves minutes** on each rebuild during development
+
+<Tip>
+  Copy frequently-changing files as late as possible in the Dockerfile to maximize cache hits.
+</Tip>
+
+## Multi-Stage Builds
+
+For smaller production images, use multi-stage builds:
+
+```dockerfile
+# Build stage
+FROM python:3.12 AS builder
+
+WORKDIR /code
+
+COPY ./requirements.txt /code/requirements.txt
+RUN pip install --user --no-cache-dir --upgrade -r /code/requirements.txt
+
+# Runtime stage
+FROM python:3.12-slim
+
+WORKDIR /code
+
+# Copy installed packages from builder
+COPY --from=builder /root/.local /root/.local
+COPY ./app /code/app
+
+# Update PATH
+ENV PATH=/root/.local/bin:$PATH
+
+CMD ["fastapi", "run", "app/main.py", "--port", "80"]
+```
+
+Benefits:
+- Smaller final image (uses `slim` base)
+- Faster deployments
+- Reduced attack surface
+
+## Single File Applications
+
+For a single-file app without the `app` directory:
+
+```
+.
+├── Dockerfile
+├── main.py
+└── requirements.txt
+```
+
+**Dockerfile**:
+```dockerfile
+FROM python:3.12
+
+WORKDIR /code
+
+COPY ./requirements.txt /code/requirements.txt
+RUN pip install --no-cache-dir --upgrade -r /code/requirements.txt
+
+COPY ./main.py /code/
+
+CMD ["fastapi", "run", "main.py", "--port", "80"]
+```
+
+## Workers in Containers
+
+### Single Container (Simple Deployment)
+
+For simple deployments, use multiple workers in one container:
+
+```dockerfile
+CMD ["fastapi", "run", "app/main.py", "--port", "80", "--workers", "4"]
+```
+
+### Multiple Containers (Kubernetes/Swarm)
+
+For orchestrated environments, run **one process per container**:
+
+```dockerfile
+# ✅ One Uvicorn process per container
+CMD ["fastapi", "run", "app/main.py", "--port", "80"]
+```
+
+Let Kubernetes/Swarm handle replication:
+
+```yaml
+# Kubernetes deployment
+replicas: 4  # Run 4 containers
+```
+
+<Warning>
+  In Kubernetes, **don't use `--workers`**. Run one process per container and let Kubernetes replicate containers.
+</Warning>
+
+## HTTPS in Containers
+
+HTTPS is typically handled **externally** by:
+
+- **Traefik** - Automatic certificate management
+- **Nginx** - With Certbot for certificates
+- **Cloud load balancers** - Managed SSL/TLS
+- **Kubernetes Ingress** - With cert-manager
+
+Your FastAPI container runs plain HTTP internally, and the external component handles HTTPS.
+
+<Info>
+  This separation allows easy certificate renewal without touching your application containers.
+</Info>
+
+## Docker Compose Example
+
+For local development and simple deployments:
+
+**docker-compose.yml**:
+```yaml
+services:
+  web:
+    build: .
+    ports:
+      - "80:80"
+    environment:
+      - DATABASE_URL=postgresql://user:pass@db:5432/dbname
+    depends_on:
+      - db
+  
+  db:
+    image: postgres:15
+    environment:
+      - POSTGRES_PASSWORD=pass
+      - POSTGRES_USER=user
+      - POSTGRES_DB=dbname
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
+```
+
+Run with:
+```bash
+docker compose up -d
+```
+
+## Using uv for Faster Builds
+
+For faster dependency installation, use [uv](https://github.com/astral-sh/uv):
+
+```dockerfile
+FROM python:3.12
+
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+WORKDIR /code
+
+COPY ./pyproject.toml ./uv.lock /code/
+RUN uv sync --frozen --no-cache
+
+COPY ./app /code/app
+
+CMD ["uv", "run", "fastapi", "run", "app/main.py", "--port", "80"]
+```
+
+<Tip>
+  `uv` can be 10-100x faster than pip for installing dependencies.
+</Tip>
+
+## Best Practices
+
+<Steps>
+  <Step title="Use Specific Python Versions">
+    Avoid `:latest` tags. Use specific versions like `python:3.12` for consistency.
+  </Step>
+  
+  <Step title="Leverage Build Cache">
+    Copy requirements before code to maximize Docker cache efficiency.
+  </Step>
+  
+  <Step title="Use Exec Form for CMD">
+    Always use array syntax: `CMD ["fastapi", "run", ...]` for proper signal handling.
+  </Step>
+  
+  <Step title="Minimize Image Size">
+    Use multi-stage builds and `--no-cache-dir` flag with pip.
+  </Step>
+  
+  <Step title="Don't Run as Root">
+    Create a non-root user for security:
+    ```dockerfile
+    RUN useradd -m -u 1000 appuser
+    USER appuser
+    ```
+  </Step>
+  
+  <Step title="Health Checks">
+    Add Docker health checks:
+    ```dockerfile
+    HEALTHCHECK CMD curl --fail http://localhost/health || exit 1
+    ```
+  </Step>
+</Steps>
+
+## Deployment Options
+
+Once you have a Docker image, deploy it to:
+
+- **Docker Compose** - Single server, simple setup
+- **Kubernetes** - Multi-server, production-grade orchestration
+- **Docker Swarm** - Simpler alternative to Kubernetes
+- **Cloud Container Services** - AWS ECS, Google Cloud Run, Azure Container Instances
+- **Platform as a Service** - Render, Railway, Fly.io
+
+<Note>
+  Most cloud providers accept Docker images directly, making deployment straightforward.
+</Note>
+
+## Recap
+
+Using Docker containers simplifies handling all deployment concepts:
+
+- ✅ **HTTPS** - External proxy handles certificates
+- ✅ **Running on Startup** - Container orchestrators manage this
+- ✅ **Restarts** - Automatic with `--restart` policies
+- ✅ **Replication** - Multiple containers or `--workers`
+- ✅ **Memory** - Set limits in orchestrator config
+- ✅ **Pre-Start Steps** - Init containers or startup scripts
+
+<Tip>
+  Build your image from scratch rather than using base images like `tiangolo/uvicorn-gunicorn-fastapi` (now deprecated). It's just as simple and gives you full control.
+</Tip>

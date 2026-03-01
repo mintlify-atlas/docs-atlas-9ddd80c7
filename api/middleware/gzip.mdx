@@ -1,0 +1,91 @@
+---
+title: GZipMiddleware
+description: Enable GZip compression for response data in your FastAPI application
+---
+
+# GZipMiddleware
+
+The `GZipMiddleware` handles GZip compression for responses when the client supports it (indicated by an `Accept-Encoding` header that includes "gzip").
+
+## Usage
+
+```python
+from fastapi import FastAPI
+from fastapi.middleware.gzip import GZipMiddleware
+
+app = FastAPI()
+
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+```
+
+## Parameters
+
+<ParamField path="minimum_size" type="int" default="500">
+  The minimum response size in bytes before compression is applied. Responses smaller than this value will not be compressed. Default is 500 bytes.
+</ParamField>
+
+<ParamField path="compresslevel" type="int" default="9">
+  The GZip compression level, ranging from 0 to 9. Higher values provide better compression but use more CPU. Default is 9 (maximum compression).
+  
+  - `0`: No compression
+  - `1`: Fastest compression, least CPU usage
+  - `9`: Best compression, most CPU usage
+</ParamField>
+
+## How It Works
+
+The middleware automatically:
+
+1. Checks if the client supports GZip compression via the `Accept-Encoding` header
+2. Compresses the response body if it exceeds the `minimum_size` threshold
+3. Sets the `Content-Encoding: gzip` header on compressed responses
+4. Removes the `Content-Length` header (as the compressed size differs)
+
+## Example with Custom Configuration
+
+```python
+from fastapi import FastAPI
+from fastapi.middleware.gzip import GZipMiddleware
+
+app = FastAPI()
+
+# Compress responses larger than 2KB with medium compression
+app.add_middleware(
+    GZipMiddleware,
+    minimum_size=2000,
+    compresslevel=6,
+)
+
+@app.get("/large-data")
+async def get_large_data():
+    return {"data": "x" * 10000}  # Will be compressed
+
+@app.get("/small-data")
+async def get_small_data():
+    return {"data": "small"}  # Won't be compressed
+```
+
+## Performance Considerations
+
+- **Minimum Size**: Set `minimum_size` appropriately to avoid compressing small responses where compression overhead exceeds benefits
+- **Compression Level**: Balance between compression ratio and CPU usage:
+  - Use lower values (4-6) for CPU-constrained environments
+  - Use higher values (7-9) when bandwidth is more expensive than CPU
+- **Content Types**: GZip works best with text-based content (JSON, HTML, CSS, JavaScript)
+- **Pre-compressed Assets**: Consider pre-compressing static assets rather than compressing on every request
+
+## When to Use
+
+GZipMiddleware is beneficial when:
+
+- Serving large JSON responses or text-based data
+- Bandwidth is limited or expensive
+- Clients primarily access your API over slower networks
+- Response sizes regularly exceed 1KB
+
+## When to Avoid
+
+- Binary data (images, videos) that are already compressed
+- Very small responses (< 500 bytes) where compression adds overhead
+- CPU resources are constrained
+- You're already using compression at the reverse proxy/CDN level

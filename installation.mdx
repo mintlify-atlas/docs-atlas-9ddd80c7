@@ -1,0 +1,145 @@
+---
+title: Installation
+description: Install FastAPI and its dependencies to start building high-performance APIs
+---
+
+# Installation
+
+Get started with FastAPI by installing it in your Python environment.
+
+## Requirements
+
+<Info>
+  FastAPI requires **Python 3.10 or higher**. Make sure you have a compatible Python version installed.
+</Info>
+
+You can check your Python version with:
+
+```bash
+python --version
+```
+
+## Installation options
+
+FastAPI offers two installation options depending on your needs:
+
+### Standard installation (recommended)
+
+<Steps>
+  <Step title="Create a virtual environment">
+    It's recommended to create a virtual environment for your project:
+    
+    ```bash
+    python -m venv venv
+    ```
+    
+    Activate the virtual environment:
+    
+    <CodeGroup>
+    ```bash macOS/Linux
+    source venv/bin/activate
+    ```
+    
+    ```bash Windows
+    venv\Scripts\activate
+    ```
+    </CodeGroup>
+  </Step>
+  
+  <Step title="Install FastAPI with standard dependencies">
+    Install FastAPI with all standard dependencies included:
+    
+    ```bash
+    pip install "fastapi[standard]"
+    ```
+    
+    <Note>
+      Make sure to use quotes around `"fastapi[standard]"` to ensure it works correctly in all terminals.
+    </Note>
+  </Step>
+  
+  <Step title="Verify installation">
+    Verify that FastAPI is installed correctly:
+    
+    ```bash
+    python -c "import fastapi; print(fastapi.__version__)"
+    ```
+  </Step>
+</Steps>
+
+### Minimal installation
+
+If you want more control over dependencies, you can install just the core FastAPI package:
+
+```bash
+pip install fastapi
+```
+
+With the minimal installation, you'll need to install additional dependencies manually based on your needs:
+
+```bash
+# For the development server
+pip install "uvicorn[standard]"
+
+# For form data and file uploads
+pip install python-multipart
+
+# For email validation
+pip install email-validator
+```
+
+## What's included in the standard installation?
+
+When you install `fastapi[standard]`, you get:
+
+**Used by Pydantic:**
+- `email-validator` - Email validation support
+- `pydantic-settings` - Settings management
+- `pydantic-extra-types` - Extra data types
+
+**Used by Starlette:**
+- `httpx` - HTTP client for testing with `TestClient`
+- `jinja2` - Template rendering support
+- `python-multipart` - Form parsing and file uploads
+
+**Used by FastAPI:**
+- `uvicorn[standard]` - ASGI server for running your application
+- `fastapi-cli[standard]` - Command-line interface with the `fastapi` command
+
+<Warning>
+  The `fastapi[standard]` installation includes `fastapi-cloud-cli` for deploying to FastAPI Cloud. If you don't want this, use `pip install "fastapi[standard-no-fastapi-cloud-cli]"` instead.
+</Warning>
+
+## Understanding the dependencies
+
+### Core dependencies
+
+FastAPI has only a few core dependencies that are always installed:
+
+- **Starlette** (≥0.46.0) - Web framework foundation
+- **Pydantic** (≥2.7.0) - Data validation using Python type hints
+- **typing-extensions** (≥4.8.0) - Backported type hints
+- **typing-inspection** (≥0.4.2) - Runtime type inspection
+- **annotated-doc** (≥0.0.2) - Documentation annotations
+
+### Optional dependencies
+
+You can install additional packages for specific features:
+
+```bash
+# For JSON performance improvements
+pip install orjson
+# or
+pip install ujson
+
+# For additional Pydantic types
+pip install pydantic-extra-types
+```
+
+## Next steps
+
+Now that you have FastAPI installed, you're ready to build your first API:
+
+<Card title="Quick start guide" icon="bolt" href="/quickstart">
+  Create your first FastAPI application in minutes
+</Card>

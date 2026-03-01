@@ -1,0 +1,388 @@
+---
+title: Extra Models
+description: Learn how to work with multiple Pydantic models including inheritance, unions, and model composition in FastAPI
+---
+
+As your API grows, you'll need multiple related models for different purposes. FastAPI and Pydantic make it easy to work with model inheritance, unions, and composition.
+
+## The Problem: Multiple Models Needed
+
+For a single resource (like a user), you often need different models:
+
+- **Input model**: Accepts user data including passwords
+- **Output model**: Returns data without sensitive information
+- **Database model**: Includes internal fields like hashed passwords
+
+<Warning>
+Never return sensitive data like passwords in API responses, even if hashed.
+</Warning>
+
+## Model Inheritance
+
+Use Pydantic model inheritance to reduce duplication:
+
+```python
+from fastapi import FastAPI
+from pydantic import BaseModel, EmailStr
+
+app = FastAPI()
+
+# Base model with common fields
+class UserBase(BaseModel):
+    username: str
+    email: EmailStr
+    full_name: str | None = None
+
+# Input model - inherits base + adds password
+class UserIn(UserBase):
+    password: str
+
+# Output model - inherits base only
+class UserOut(UserBase):
+    pass
+
+# Database model - inherits base + adds DB fields
+class UserInDB(UserBase):
+    hashed_password: str
+
+def fake_password_hasher(raw_password: str):
+    return "supersecret" + raw_password
+
+def fake_save_user(user_in: UserIn):
+    hashed_password = fake_password_hasher(user_in.password)
+    user_in_db = UserInDB(**user_in.model_dump(), hashed_password=hashed_password)
+    print("User saved! ..not really")
+    return user_in_db
+
+@app.post("/user/", response_model=UserOut)
+async def create_user(user_in: UserIn):
+    user_saved = fake_save_user(user_in)
+    return user_saved
+```
+
+<Steps>
+  <Step title="UserBase">
+    Contains common fields shared across all models
+  </Step>
+  
+  <Step title="UserIn">
+    Adds `password` field for accepting input
+  </Step>
+  
+  <Step title="UserOut">
+    Uses only base fields for secure output
+  </Step>
+  
+  <Step title="UserInDB">
+    Adds `hashed_password` for database storage
+  </Step>
+</Steps>
+
+## Union Types for Multiple Response Models
+
+Return different models based on conditions:
+
+```python
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class BaseItem(BaseModel):
+    description: str
+    type: str
+
+class CarItem(BaseItem):
+    type: str = "car"
+
+class PlaneItem(BaseItem):
+    type: str = "plane"
+    size: int
+
+items = {
+    "item1": {"description": "All my friends drive a low rider", "type": "car"},
+    "item2": {
+        "description": "Music is my aeroplane, it's my aeroplane",
+        "type": "plane",
+        "size": 5,
+    },
+}
+
+@app.get("/items/{item_id}", response_model=PlaneItem | CarItem)
+async def read_item(item_id: str):
+    return items[item_id]
+```
+
+<Info>
+FastAPI will automatically match the response to the correct model based on the data structure.
+</Info>
+
+## List of Models
+
+Return lists of model instances:
+
+```python
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class Item(BaseModel):
+    name: str
+    description: str | None = None
+    price: float
+    tax: float | None = None
+
+@app.get("/items/", response_model=list[Item])
+async def read_items():
+    return [
+        Item(name="Portal Gun", price=42.0),
+        Item(name="Plumbus", price=32.0),
+    ]
+```
+
+## Dict Response Model
+
+Return arbitrary dict responses:
+
+```python
+from fastapi import FastAPI
+
+app = FastAPI()
+
+@app.get("/keyword-weights/", response_model=dict[str, float])
+async def read_keyword_weights():
+    return {
+        "foo": 2.3,
+        "bar": 3.4,
+        "baz": 1.2
+    }
+```
+
+<Note>
+While `dict[str, float]` provides type hints, it doesn't offer field-level validation like Pydantic models.
+</Note>
+
+## Model Composition
+
+Compose models by including other models as fields:
+
+```python
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class Image(BaseModel):
+    url: str
+    name: str
+
+class Item(BaseModel):
+    name: str
+    description: str | None = None
+    price: float
+    tax: float | None = None
+    tags: set[str] = set()
+    images: list[Image] | None = None
+
+class Offer(BaseModel):
+    name: str
+    description: str | None = None
+    price: float
+    items: list[Item]
+
+@app.post("/offers/")
+async def create_offer(offer: Offer):
+    return offer
+```
+
+### Nested Model Example
+
+```json
+{
+  "name": "Holiday Special",
+  "description": "Best offer of the year",
+  "price": 99.99,
+  "items": [
+    {
+      "name": "Portal Gun",
+      "price": 42.0,
+      "images": [
+        {
+          "url": "https://example.com/portal.jpg",
+          "name": "Portal Gun Image"
+        }
+      ]
+    },
+    {
+      "name": "Plumbus",
+      "price": 32.0
+    }
+  ]
+}
+```
+
+## Deeply Nested Models
+
+You can nest models as deeply as needed:
+
+```python
+from fastapi import FastAPI
+from pydantic import BaseModel, HttpUrl
+
+app = FastAPI()
+
+class Image(BaseModel):
+    url: HttpUrl
+    name: str
+
+class Item(BaseModel):
+    name: str
+    description: str | None = None
+    price: float
+    tax: float | None = None
+    tags: set[str] = set()
+    images: list[Image] | None = None
+
+class Offer(BaseModel):
+    name: str
+    description: str | None = None
+    price: float
+    items: list[Item]
+
+class Customer(BaseModel):
+    username: str
+    email: str
+
+class Order(BaseModel):
+    order_id: str
+    customer: Customer
+    offers: list[Offer]
+
+@app.post("/orders/")
+async def create_order(order: Order):
+    return order
+```
+
+<Tip>
+FastAPI will validate the entire nested structure automatically, providing detailed error messages for any validation failures.
+</Tip>
+
+## Generic Models with Type Variables
+
+Create generic response wrappers:
+
+```python
+from typing import Generic, TypeVar
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+app = FastAPI()
+
+T = TypeVar('T')
+
+class Response(BaseModel, Generic[T]):
+    data: T
+    message: str
+    success: bool = True
+
+class Item(BaseModel):
+    name: str
+    price: float
+
+@app.get("/items/{item_id}", response_model=Response[Item])
+async def read_item(item_id: int):
+    return {
+        "data": {"name": "Portal Gun", "price": 42.0},
+        "message": "Item retrieved successfully",
+        "success": True
+    }
+
+@app.get("/items/", response_model=Response[list[Item]])
+async def read_items():
+    return {
+        "data": [
+            {"name": "Portal Gun", "price": 42.0},
+            {"name": "Plumbus", "price": 32.0}
+        ],
+        "message": "Items retrieved successfully",
+        "success": True
+    }
+```
+
+## Model Config and Settings
+
+Customize model behavior with configuration:
+
+```python
+from pydantic import BaseModel, ConfigDict
+
+class Item(BaseModel):
+    model_config = ConfigDict(
+        str_strip_whitespace=True,
+        validate_assignment=True,
+        use_enum_values=True,
+    )
+    
+    name: str
+    description: str | None = None
+    price: float
+```
+
+## When to Use Multiple Models
+
+<Steps>
+  <Step title="Security">
+    Separate input/output models to exclude sensitive data
+  </Step>
+  
+  <Step title="API Versions">
+    Different models for different API versions
+  </Step>
+  
+  <Step title="User Roles">
+    Different response models based on user permissions
+  </Step>
+  
+  <Step title="Resource States">
+    Different models for resource creation vs retrieval
+  </Step>
+</Steps>
+
+## Best Practices
+
+<CodeGroup>
+```python Good: Model Inheritance
+class UserBase(BaseModel):
+    username: str
+    email: str
+
+class UserCreate(UserBase):
+    password: str
+
+class UserResponse(UserBase):
+    id: int
+```
+
+```python Bad: Duplicated Fields
+class UserCreate(BaseModel):
+    username: str
+    email: str
+    password: str
+
+class UserResponse(BaseModel):
+    username: str  # Duplicated!
+    email: str     # Duplicated!
+    id: int
+```
+</CodeGroup>
+
+<Warning>
+Avoid duplicating field definitions. Use inheritance or composition instead.
+</Warning>
+
+## Related Topics
+
+- [Response Model](/tutorial/response-model) - Learn about response_model parameter
+- [Request Body](/tutorial/request-body) - Define request schemas
+- [Extra Data Types](/tutorial/extra-data-types) - Use specialized field types

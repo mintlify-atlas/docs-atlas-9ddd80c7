@@ -1,0 +1,342 @@
+---
+title: File
+description: API reference for the FastAPI File parameter function and file uploads
+---
+
+# File
+
+Declare a file upload parameter for a path operation. File parameters receive uploaded files as `bytes` or `UploadFile` objects.
+
+```python
+from typing import Annotated
+from fastapi import FastAPI, File, UploadFile
+
+app = FastAPI()
+
+@app.post("/uploadfile/")
+async def create_upload_file(
+    file: Annotated[UploadFile, File()]
+):
+    return {"filename": file.filename}
+```
+
+## Signature
+
+```python
+def File(
+    default: Any = Undefined,
+    *,
+    media_type: str = "multipart/form-data",
+    alias: str | None = None,
+    title: str | None = None,
+    description: str | None = None,
+    gt: float | None = None,
+    ge: float | None = None,
+    lt: float | None = None,
+    le: float | None = None,
+    min_length: int | None = None,
+    max_length: int | None = None,
+    pattern: str | None = None,
+    examples: list[Any] | None = None,
+    deprecated: bool | str | None = None,
+    include_in_schema: bool = True,
+    json_schema_extra: dict[str, Any] | None = None,
+) -> Any
+```
+
+## Parameters
+
+<ParamField path="default" type="Any" default="Undefined">
+  Default value if the parameter field is not set.
+</ParamField>
+
+<ParamField path="media_type" type="str" default="multipart/form-data">
+  The media type of this parameter field. For file uploads, this is always `multipart/form-data`.
+</ParamField>
+
+<ParamField path="alias" type="str | None" default="None">
+  An alternative name for the parameter field. This will be used to extract the data and for the generated OpenAPI.
+</ParamField>
+
+<ParamField path="title" type="str | None" default="None">
+  Human-readable title for the parameter.
+</ParamField>
+
+<ParamField path="description" type="str | None" default="None">
+  Human-readable description for the parameter.
+</ParamField>
+
+<ParamField path="examples" type="list[Any] | None" default="None">
+  Example values for this field.
+</ParamField>
+
+<ParamField path="deprecated" type="bool | str | None" default="None">
+  Mark this parameter field as deprecated. It will affect the generated OpenAPI (visible at `/docs`).
+</ParamField>
+
+<ParamField path="include_in_schema" type="bool" default="True">
+  Whether to include this parameter field in the generated OpenAPI.
+</ParamField>
+
+<ParamField path="json_schema_extra" type="dict[str, Any] | None" default="None">
+  Any additional JSON schema data.
+</ParamField>
+
+## UploadFile Class
+
+The `UploadFile` class provides an async-friendly interface for working with uploaded files.
+
+### Attributes
+
+- **filename**: `str` - The original filename
+- **content_type**: `str` - The content type (MIME type)
+- **file**: `SpooledTemporaryFile` - The actual Python file object
+- **headers**: `Headers` - The headers associated with the file
+- **size**: `int` - The size of the file in bytes
+
+### Methods
+
+- **async read(size: int = -1)**: Read the file contents
+- **async write(data: bytes)**: Write data to the file
+- **async seek(offset: int)**: Move to a specific position in the file
+- **async close()**: Close the file
+
+## Examples
+
+### Upload Single File (UploadFile)
+
+```python
+from typing import Annotated
+from fastapi import FastAPI, File, UploadFile
+
+app = FastAPI()
+
+@app.post("/uploadfile/")
+async def create_upload_file(
+    file: Annotated[UploadFile, File()]
+):
+    contents = await file.read()
+    return {
+        "filename": file.filename,
+        "content_type": file.content_type,
+        "size": len(contents)
+    }
+```
+
+<Note>
+  `UploadFile` is recommended over `bytes` for file uploads because it uses a spooled file (stored in memory up to a size limit, then on disk), making it more memory-efficient for large files.
+</Note>
+
+### Upload Single File (bytes)
+
+```python
+@app.post("/uploadfile/")
+async def create_upload_file(
+    file: Annotated[bytes, File()]
+):
+    return {"file_size": len(file)}
+```
+
+<Warning>
+  Using `bytes` loads the entire file into memory. This is only suitable for small files.
+</Warning>
+
+### Upload Multiple Files
+
+```python
+@app.post("/uploadfiles/")
+async def create_upload_files(
+    files: Annotated[list[UploadFile], File()]
+):
+    return {
+        "filenames": [file.filename for file in files]
+    }
+```
+
+### Optional File Upload
+
+```python
+@app.post("/uploadfile/")
+async def create_upload_file(
+    file: Annotated[UploadFile | None, File()] = None
+):
+    if file is None:
+        return {"message": "No file uploaded"}
+    return {"filename": file.filename}
+```
+
+### File Upload with Form Data
+
+```python
+from fastapi import Form
+
+@app.post("/uploadfile/")
+async def create_upload_file(
+    file: Annotated[UploadFile, File()],
+    description: Annotated[str, Form()],
+    public: Annotated[bool, Form()] = False
+):
+    return {
+        "filename": file.filename,
+        "description": description,
+        "public": public
+    }
+```
+
+### File Upload with Metadata
+
+```python
+@app.post("/uploadfile/")
+async def create_upload_file(
+    file: Annotated[
+        UploadFile,
+        File(description="The file to upload")
+    ]
+):
+    return {"filename": file.filename}
+```
+
+## Working with UploadFile
+
+### Save File to Disk
+
+```python
+@app.post("/uploadfile/")
+async def create_upload_file(
+    file: Annotated[UploadFile, File()]
+):
+    with open(f"uploads/{file.filename}", "wb") as buffer:
+        content = await file.read()
+        buffer.write(content)
+    return {"filename": file.filename}
+```
+
+### Read File in Chunks
+
+```python
+@app.post("/uploadfile/")
+async def create_upload_file(
+    file: Annotated[UploadFile, File()]
+):
+    chunk_size = 1024 * 1024  # 1MB
+    chunks = []
+    while True:
+        chunk = await file.read(chunk_size)
+        if not chunk:
+            break
+        chunks.append(chunk)
+    return {
+        "filename": file.filename,
+        "total_chunks": len(chunks)
+    }
+```
+
+### Process Image File
+
+```python
+from PIL import Image
+import io
+
+@app.post("/uploadimage/")
+async def upload_image(
+    file: Annotated[UploadFile, File()]
+):
+    contents = await file.read()
+    image = Image.open(io.BytesIO(contents))
+    return {
+        "filename": file.filename,
+        "format": image.format,
+        "size": image.size
+    }
+```
+
+### Validate File Type
+
+```python
+@app.post("/uploadimage/")
+async def upload_image(
+    file: Annotated[UploadFile, File()]
+):
+    allowed_types = ["image/jpeg", "image/png", "image/gif"]
+    if file.content_type not in allowed_types:
+        raise ValueError(f"File type {file.content_type} not allowed")
+    return {"filename": file.filename}
+```
+
+## Common Use Cases
+
+### Profile Picture Upload
+
+```python
+@app.post("/users/me/avatar")
+async def upload_avatar(
+    file: Annotated[UploadFile, File(description="Profile picture")]
+):
+    # Validate file is an image
+    if not file.content_type.startswith("image/"):
+        raise ValueError("File must be an image")
+    
+    # Save file
+    with open(f"avatars/{file.filename}", "wb") as buffer:
+        content = await file.read()
+        buffer.write(content)
+    
+    return {"avatar_url": f"/avatars/{file.filename}"}
+```
+
+### Document Upload
+
+```python
+@app.post("/documents/")
+async def upload_document(
+    file: Annotated[UploadFile, File()],
+    title: Annotated[str, Form()],
+    tags: Annotated[str, Form()] = ""
+):
+    return {
+        "filename": file.filename,
+        "title": title,
+        "tags": tags.split(",")
+    }
+```
+
+### Bulk File Upload
+
+```python
+@app.post("/uploadfiles/")
+async def upload_multiple_files(
+    files: Annotated[list[UploadFile], File(description="Multiple files to upload")]
+):
+    results = []
+    for file in files:
+        contents = await file.read()
+        results.append({
+            "filename": file.filename,
+            "size": len(contents)
+        })
+    return {"files": results}
+```
+
+## Installation Requirement
+
+<Note>
+  File uploads require the `python-multipart` package:
+  
+  ```bash
+  pip install python-multipart
+  ```
+</Note>
+
+## Important Notes
+
+<Warning>
+  Always validate file types and sizes to prevent security issues and resource exhaustion.
+</Warning>
+
+<Note>
+  `UploadFile` uses Python's `SpooledTemporaryFile`, which stores the file in memory up to a maximum size, then stores it on disk. This makes it efficient for both small and large files.
+</Note>
+
+<Note>
+  Don't forget to `await file.read()` since `UploadFile` methods are async.
+</Note>

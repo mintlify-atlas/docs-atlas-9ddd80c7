@@ -1,0 +1,479 @@
+---
+title: "Conditional OpenAPI"
+description: "Control OpenAPI schema generation and documentation availability based on environment variables and application settings"
+---
+
+You can conditionally enable or disable OpenAPI documentation based on environment, configuration, or other runtime conditions. This is commonly used to hide API docs in production environments.
+
+## Understanding OpenAPI Control
+
+FastAPI provides several parameters to control documentation:
+
+- `openapi_url`: URL where OpenAPI schema is served (default: `/openapi.json`)
+- `docs_url`: URL for Swagger UI docs (default: `/docs`)
+- `redoc_url`: URL for ReDoc docs (default: `/redoc`)
+
+<Info>
+Setting `openapi_url=None` disables OpenAPI schema generation and automatically disables both `/docs` and `/redoc`.
+</Info>
+
+## Security Considerations
+
+<Warning>
+Hiding documentation does NOT secure your API. Path operations remain accessible even when docs are disabled.
+</Warning>
+
+### Why Hiding Docs Isn't Security
+
+Disabling documentation:
+- ❌ Doesn't protect endpoints
+- ❌ Doesn't fix security vulnerabilities
+- ❌ Doesn't prevent API access
+- ❌ Is simply [security through obscurity](https://en.wikipedia.org/wiki/Security_through_obscurity)
+
+### Real Security Measures
+
+Instead, implement proper security:
+
+- ✅ Use Pydantic models for request/response validation
+- ✅ Implement authentication and authorization
+- ✅ Use OAuth2 scopes for granular permissions
+- ✅ Store password hashes, never plaintext
+- ✅ Use proven cryptographic tools (JWT, bcrypt, etc.)
+- ✅ Apply rate limiting and input sanitization
+- ✅ Follow security best practices
+
+<Note>
+Hiding docs may make debugging harder and doesn't improve security. Only disable docs if you have a specific organizational requirement.
+</Note>
+
+## Disabling OpenAPI with Settings
+
+Use environment variables and Pydantic settings to control OpenAPI availability.
+
+### Using Pydantic Settings
+
+```python
+from fastapi import FastAPI
+from pydantic_settings import BaseSettings
+
+class Settings(BaseSettings):
+    openapi_url: str = "/openapi.json"
+
+settings = Settings()
+
+app = FastAPI(openapi_url=settings.openapi_url)
+
+@app.get("/")
+def root():
+    return {"message": "Hello World"}
+```
+
+Disable OpenAPI by setting an environment variable:
+
+```bash
+OPENAPI_URL= uvicorn main:app
+```
+
+With OpenAPI disabled:
+- `/openapi.json` returns 404
+- `/docs` returns 404
+- `/redoc` returns 404
+- Your endpoints still work normally
+
+<Tip>
+Setting `OPENAPI_URL` to an empty string is equivalent to `openapi_url=None`.
+</Tip>
+
+## Environment-Based Configuration
+
+Different configurations for different environments:
+
+```python
+from fastapi import FastAPI
+from pydantic_settings import BaseSettings
+from functools import lru_cache
+
+class Settings(BaseSettings):
+    environment: str = "development"
+    app_name: str = "My API"
+    openapi_url: str | None = "/openapi.json"
+    
+    class Config:
+        env_file = ".env"
+
+@lru_cache()
+def get_settings():
+    return Settings()
+
+def create_app() -> FastAPI:
+    settings = get_settings()
+    
+    # Disable OpenAPI in production
+    openapi_url = None if settings.environment == "production" else settings.openapi_url
+    
+    app = FastAPI(
+        title=settings.app_name,
+        openapi_url=openapi_url
+    )
+    
+    return app
+
+app = create_app()
+
+@app.get("/")
+def root():
+    return {"message": "Hello World"}
+```
+
+### Environment Files
+
+**Development (.env.development)**
+```bash
+ENVIRONMENT=development
+OPENAPI_URL=/openapi.json
+APP_NAME=My API - Development
+```
+
+**Production (.env.production)**
+```bash
+ENVIRONMENT=production
+OPENAPI_URL=
+APP_NAME=My API
+```
+
+## Selectively Disabling Documentation UIs
+
+Disable specific docs UIs while keeping others:
+
+### Disable Swagger UI, Keep ReDoc
+
+```python
+from fastapi import FastAPI
+
+app = FastAPI(
+    title="My API",
+    docs_url=None,  # Disable Swagger UI
+    redoc_url="/docs"  # Keep ReDoc at /docs
+)
+```
+
+### Disable ReDoc, Keep Swagger UI
+
+```python
+from fastapi import FastAPI
+
+app = FastAPI(
+    title="My API",
+    docs_url="/docs",  # Keep Swagger UI
+    redoc_url=None  # Disable ReDoc
+)
+```
+
+### Custom Documentation URLs
+
+```python
+from fastapi import FastAPI
+
+app = FastAPI(
+    title="My API",
+    openapi_url="/api/v1/openapi.json",
+    docs_url="/api/docs",
+    redoc_url="/api/redoc"
+)
+```
+
+## Advanced Environment-Based Control
+
+### Multiple Environment Support
+
+```python
+from enum import Enum
+from fastapi import FastAPI
+from pydantic_settings import BaseSettings
+
+class Environment(str, Enum):
+    DEVELOPMENT = "development"
+    STAGING = "staging"
+    PRODUCTION = "production"
+
+class Settings(BaseSettings):
+    environment: Environment = Environment.DEVELOPMENT
+    debug: bool = True
+    
+    class Config:
+        env_file = ".env"
+
+def get_openapi_config(env: Environment) -> dict:
+    """Return OpenAPI config based on environment"""
+    if env == Environment.PRODUCTION:
+        return {
+            "openapi_url": None,
+            "docs_url": None,
+            "redoc_url": None
+        }
+    elif env == Environment.STAGING:
+        return {
+            "openapi_url": "/openapi.json",
+            "docs_url": None,  # No UI in staging
+            "redoc_url": None
+        }
+    else:  # Development
+        return {
+            "openapi_url": "/openapi.json",
+            "docs_url": "/docs",
+            "redoc_url": "/redoc"
+        }
+
+settings = Settings()
+
+app = FastAPI(
+    title="My API",
+    **get_openapi_config(settings.environment)
+)
+
+@app.get("/")
+def root():
+    return {"environment": settings.environment}
+```
+
+### Feature Flags
+
+```python
+from fastapi import FastAPI
+from pydantic_settings import BaseSettings
+
+class Settings(BaseSettings):
+    enable_docs: bool = True
+    enable_redoc: bool = True
+    docs_require_auth: bool = False
+    
+    class Config:
+        env_file = ".env"
+
+settings = Settings()
+
+app = FastAPI(
+    openapi_url="/openapi.json" if settings.enable_docs else None,
+    docs_url="/docs" if settings.enable_docs else None,
+    redoc_url="/redoc" if settings.enable_redoc else None
+)
+
+@app.get("/")
+def root():
+    return {"docs_enabled": settings.enable_docs}
+```
+
+## Protected Documentation Endpoints
+
+If you want docs available but protected, use dependencies:
+
+```python
+from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
+from fastapi.openapi.utils import get_openapi
+import secrets
+
+app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+security = HTTPBasic()
+
+def verify_docs_credentials(credentials: HTTPBasicCredentials = Depends(security)):
+    """Verify username and password for docs access"""
+    correct_username = secrets.compare_digest(credentials.username, "admin")
+    correct_password = secrets.compare_digest(credentials.password, "secret")
+    
+    if not (correct_username and correct_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect credentials",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    return credentials
+
+@app.get("/docs", include_in_schema=False)
+def custom_swagger_ui_html(credentials: HTTPBasicCredentials = Depends(verify_docs_credentials)):
+    return get_swagger_ui_html(
+        openapi_url="/openapi.json",
+        title=f"{app.title} - Swagger UI"
+    )
+
+@app.get("/redoc", include_in_schema=False)
+def custom_redoc_html(credentials: HTTPBasicCredentials = Depends(verify_docs_credentials)):
+    return get_redoc_html(
+        openapi_url="/openapi.json",
+        title=f"{app.title} - ReDoc"
+    )
+
+@app.get("/openapi.json", include_in_schema=False)
+def custom_openapi(credentials: HTTPBasicCredentials = Depends(verify_docs_credentials)):
+    return get_openapi(
+        title=app.title,
+        version=app.version,
+        routes=app.routes
+    )
+
+@app.get("/")
+def root():
+    return {"message": "Hello World"}
+```
+
+<Tip>
+This approach keeps docs available but requires authentication to view them.
+</Tip>
+
+## Testing with Conditional OpenAPI
+
+Test different configurations:
+
+```python
+import pytest
+from fastapi.testclient import TestClient
+from main import create_app
+
+def test_openapi_enabled():
+    """Test with OpenAPI enabled"""
+    import os
+    os.environ["OPENAPI_URL"] = "/openapi.json"
+    
+    app = create_app()
+    client = TestClient(app)
+    
+    response = client.get("/openapi.json")
+    assert response.status_code == 200
+    assert "openapi" in response.json()
+    
+    response = client.get("/docs")
+    assert response.status_code == 200
+
+def test_openapi_disabled():
+    """Test with OpenAPI disabled"""
+    import os
+    os.environ["OPENAPI_URL"] = ""
+    
+    app = create_app()
+    client = TestClient(app)
+    
+    response = client.get("/openapi.json")
+    assert response.status_code == 404
+    
+    response = client.get("/docs")
+    assert response.status_code == 404
+    
+    # Endpoints still work
+    response = client.get("/")
+    assert response.status_code == 200
+```
+
+## Complete Production Example
+
+```python
+from enum import Enum
+from functools import lru_cache
+from fastapi import FastAPI, Depends
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+class Environment(str, Enum):
+    LOCAL = "local"
+    DEVELOPMENT = "development"
+    STAGING = "staging"
+    PRODUCTION = "production"
+
+class Settings(BaseSettings):
+    environment: Environment = Environment.LOCAL
+    app_name: str = "My API"
+    app_version: str = "1.0.0"
+    debug: bool = False
+    
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False
+    )
+    
+    @property
+    def openapi_url(self) -> str | None:
+        """Return OpenAPI URL based on environment"""
+        if self.environment == Environment.PRODUCTION:
+            return None
+        return "/openapi.json"
+    
+    @property
+    def docs_url(self) -> str | None:
+        """Return docs URL based on environment"""
+        if self.environment in (Environment.PRODUCTION, Environment.STAGING):
+            return None
+        return "/docs"
+    
+    @property
+    def redoc_url(self) -> str | None:
+        """Return ReDoc URL based on environment"""
+        if self.environment in (Environment.PRODUCTION, Environment.STAGING):
+            return None
+        return "/redoc"
+
+@lru_cache()
+def get_settings() -> Settings:
+    return Settings()
+
+def create_application() -> FastAPI:
+    settings = get_settings()
+    
+    application = FastAPI(
+        title=settings.app_name,
+        version=settings.app_version,
+        debug=settings.debug,
+        openapi_url=settings.openapi_url,
+        docs_url=settings.docs_url,
+        redoc_url=settings.redoc_url
+    )
+    
+    return application
+
+app = create_application()
+
+@app.get("/")
+def root(settings: Settings = Depends(get_settings)):
+    return {
+        "app": settings.app_name,
+        "environment": settings.environment,
+        "docs_available": settings.docs_url is not None
+    }
+
+@app.get("/health")
+def health():
+    return {"status": "healthy"}
+```
+
+## Best Practices
+
+### Configuration
+- **Use environment variables**: Make OpenAPI configurable without code changes
+- **Environment-based defaults**: Set sensible defaults per environment
+- **Document behavior**: Clearly document which environments have docs enabled
+
+### Security
+- **Don't rely on hidden docs**: Implement proper authentication and authorization
+- **Consider protected docs**: Use authentication on docs instead of disabling them
+- **Keep schema accessible**: Consider keeping `/openapi.json` but hiding UIs
+
+### Operations
+- **Test all configurations**: Verify behavior with docs enabled and disabled
+- **Log configuration**: Log OpenAPI availability on startup
+- **Monitor access**: Track docs access in production environments
+
+## Summary
+
+<Info>
+Conditional OpenAPI gives you control over documentation visibility, but remember:
+- It's not a security feature
+- Endpoints remain accessible
+- Use proper authentication/authorization for real security
+- Consider protected docs instead of disabled docs
+</Info>
+
+## Related Topics
+
+- [Extending OpenAPI](/advanced/extending-openapi) - Customize OpenAPI schema
+- [Settings and Environment Variables](https://fastapi.tiangolo.com/advanced/settings/) - Configuration management
+- [Security](https://fastapi.tiangolo.com/tutorial/security/) - Proper authentication and authorization

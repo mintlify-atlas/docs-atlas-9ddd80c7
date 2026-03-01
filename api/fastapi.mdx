@@ -1,0 +1,611 @@
+---
+title: FastAPI
+description: Main FastAPI application class for building high-performance APIs
+---
+
+The `FastAPI` class is the main entry point for creating FastAPI applications. It provides the core functionality for defining routes, handling requests, and generating OpenAPI documentation.
+
+## Class Signature
+
+```python
+from fastapi import FastAPI
+
+app = FastAPI(
+    debug=False,
+    title="FastAPI",
+    summary=None,
+    description="",
+    version="0.1.0",
+    openapi_url="/openapi.json",
+    docs_url="/docs",
+    redoc_url="/redoc",
+)
+```
+
+## Constructor Parameters
+
+<ParamField path="debug" type="bool" default="False">
+  Boolean indicating if debug tracebacks should be returned on server errors.
+</ParamField>
+
+<ParamField path="title" type="str" default="FastAPI">
+  The title of the API. It will be added to the generated OpenAPI (visible at `/docs`).
+  
+  ```python
+  app = FastAPI(title="ChimichangApp")
+  ```
+</ParamField>
+
+<ParamField path="summary" type="str | None" default="None">
+  A short summary of the API. It will be added to the generated OpenAPI.
+  
+  ```python
+  app = FastAPI(summary="Deadpond's favorite app. Nuff said.")
+  ```
+</ParamField>
+
+<ParamField path="description" type="str" default="">
+  A description of the API. Supports Markdown (using CommonMark syntax). It will be added to the generated OpenAPI.
+  
+  ```python
+  app = FastAPI(
+      description="""
+      ChimichangApp API helps you do awesome stuff. 🚀
+      
+      ## Items
+      You can **read items**.
+      """
+  )
+  ```
+</ParamField>
+
+<ParamField path="version" type="str" default="0.1.0">
+  The version of the API. This is the version of your application, not the version of the OpenAPI specification.
+  
+  ```python
+  app = FastAPI(version="1.0.0")
+  ```
+</ParamField>
+
+<ParamField path="openapi_url" type="str | None" default="/openapi.json">
+  The URL where the OpenAPI schema will be served from. Set to `None` to disable OpenAPI schema and automatic `/docs` and `/redoc` endpoints.
+  
+  ```python
+  app = FastAPI(openapi_url="/api/v1/openapi.json")
+  ```
+</ParamField>
+
+<ParamField path="openapi_tags" type="list[dict[str, Any]] | None" default="None">
+  A list of tags used by OpenAPI. The order specifies the order shown in tools like Swagger UI.
+  
+  ```python
+  tags_metadata = [
+      {
+          "name": "users",
+          "description": "Operations with users.",
+      },
+      {
+          "name": "items",
+          "description": "Manage items.",
+          "externalDocs": {
+              "description": "Items external docs",
+              "url": "https://example.com/",
+          },
+      },
+  ]
+  app = FastAPI(openapi_tags=tags_metadata)
+  ```
+</ParamField>
+
+<ParamField path="servers" type="list[dict[str, str | Any]] | None" default="None">
+  A list of dicts with connectivity information to target servers.
+  
+  ```python
+  app = FastAPI(
+      servers=[
+          {"url": "https://stag.example.com", "description": "Staging environment"},
+          {"url": "https://prod.example.com", "description": "Production environment"},
+      ]
+  )
+  ```
+</ParamField>
+
+<ParamField path="dependencies" type="Sequence[Depends] | None" default="None">
+  A list of global dependencies, applied to each path operation including in sub-routers.
+  
+  ```python
+  from fastapi import Depends, FastAPI
+  from .dependencies import func_dep_1, func_dep_2
+  
+  app = FastAPI(dependencies=[Depends(func_dep_1), Depends(func_dep_2)])
+  ```
+</ParamField>
+
+<ParamField path="default_response_class" type="type[Response]" default="JSONResponse">
+  The default response class to be used for all path operations.
+  
+  ```python
+  from fastapi import FastAPI
+  from fastapi.responses import ORJSONResponse
+  
+  app = FastAPI(default_response_class=ORJSONResponse)
+  ```
+</ParamField>
+
+<ParamField path="redirect_slashes" type="bool" default="True">
+  Whether to detect and redirect slashes in URLs when the client doesn't use the same format.
+  
+  ```python
+  app = FastAPI(redirect_slashes=True)
+  ```
+</ParamField>
+
+<ParamField path="docs_url" type="str | None" default="/docs">
+  The path to the automatic interactive API documentation (Swagger UI). Set to `None` to disable.
+  
+  ```python
+  app = FastAPI(docs_url="/documentation")
+  ```
+</ParamField>
+
+<ParamField path="redoc_url" type="str | None" default="/redoc">
+  The path to the alternative automatic interactive API documentation (ReDoc). Set to `None` to disable.
+  
+  ```python
+  app = FastAPI(redoc_url="/redocumentation")
+  ```
+</ParamField>
+
+<ParamField path="swagger_ui_oauth2_redirect_url" type="str | None" default="/docs/oauth2-redirect">
+  The OAuth2 redirect endpoint for the Swagger UI.
+</ParamField>
+
+<ParamField path="swagger_ui_init_oauth" type="dict[str, Any] | None" default="None">
+  OAuth2 configuration for the Swagger UI.
+</ParamField>
+
+<ParamField path="middleware" type="Sequence[Middleware] | None" default="None">
+  List of middleware to be added when creating the application.
+</ParamField>
+
+<ParamField path="exception_handlers" type="dict[int | type[Exception], Callable] | None" default="None">
+  A dictionary with handlers for exceptions.
+</ParamField>
+
+<ParamField path="lifespan" type="Lifespan[AppType] | None" default="None">
+  A Lifespan context manager handler for startup and shutdown events.
+  
+  ```python
+  from contextlib import asynccontextmanager
+  from fastapi import FastAPI
+  
+  @asynccontextmanager
+  async def lifespan(app: FastAPI):
+      # Startup
+      print("Starting up")
+      yield
+      # Shutdown
+      print("Shutting down")
+  
+  app = FastAPI(lifespan=lifespan)
+  ```
+</ParamField>
+
+<ParamField path="terms_of_service" type="str | None" default="None">
+  A URL to the Terms of Service for your API.
+  
+  ```python
+  app = FastAPI(terms_of_service="http://example.com/terms/")
+  ```
+</ParamField>
+
+<ParamField path="contact" type="dict[str, str | Any] | None" default="None">
+  A dictionary with the contact information for the exposed API.
+  
+  ```python
+  app = FastAPI(
+      contact={
+          "name": "API Support",
+          "url": "http://example.com/contact/",
+          "email": "support@example.com",
+      }
+  )
+  ```
+</ParamField>
+
+<ParamField path="license_info" type="dict[str, str | Any] | None" default="None">
+  A dictionary with the license information for the exposed API.
+  
+  ```python
+  app = FastAPI(
+      license_info={
+          "name": "Apache 2.0",
+          "url": "https://www.apache.org/licenses/LICENSE-2.0.html",
+      }
+  )
+  ```
+</ParamField>
+
+<ParamField path="root_path" type="str" default="">
+  A path prefix handled by a proxy that is not seen by the application but is seen by external clients.
+  
+  ```python
+  app = FastAPI(root_path="/api/v1")
+  ```
+</ParamField>
+
+<ParamField path="root_path_in_servers" type="bool" default="True">
+  Whether to automatically generate the URLs in the `servers` field using the `root_path`.
+</ParamField>
+
+<ParamField path="responses" type="dict[int | str, dict[str, Any]] | None" default="None">
+  Additional responses to be shown in OpenAPI.
+</ParamField>
+
+<ParamField path="callbacks" type="list[BaseRoute] | None" default="None">
+  OpenAPI callbacks that should apply to all path operations.
+</ParamField>
+
+<ParamField path="webhooks" type="APIRouter | None" default="None">
+  OpenAPI webhooks for the application.
+</ParamField>
+
+<ParamField path="deprecated" type="bool | None" default="None">
+  Mark all path operations as deprecated.
+</ParamField>
+
+<ParamField path="include_in_schema" type="bool" default="True">
+  Whether to include all path operations in the generated OpenAPI.
+</ParamField>
+
+<ParamField path="swagger_ui_parameters" type="dict[str, Any] | None" default="None">
+  Parameters to configure Swagger UI.
+</ParamField>
+
+<ParamField path="generate_unique_id_function" type="Callable[[APIRoute], str]" default="generate_unique_id">
+  Customize the function used to generate unique IDs for path operations.
+</ParamField>
+
+<ParamField path="separate_input_output_schemas" type="bool" default="True">
+  Whether to generate separate OpenAPI schemas for request body and response body.
+</ParamField>
+
+<ParamField path="openapi_external_docs" type="dict[str, Any] | None" default="None">
+  Additional external documentation links.
+  
+  ```python
+  app = FastAPI(
+      openapi_external_docs={
+          "description": "Detailed API Reference",
+          "url": "https://example.com/api-docs",
+      }
+  )
+  ```
+</ParamField>
+
+<ParamField path="strict_content_type" type="bool" default="True">
+  Enable strict checking for request Content-Type headers. When `True`, requests with a body that do not include a Content-Type header will not be parsed as JSON.
+</ParamField>
+
+## Methods
+
+<Accordion title="Path Operation Decorators">
+
+### `@app.get(path, **kwargs)`
+
+Define a GET endpoint.
+
+```python
+@app.get("/items/{item_id}")
+async def read_item(item_id: int):
+    return {"item_id": item_id}
+```
+
+### `@app.post(path, **kwargs)`
+
+Define a POST endpoint.
+
+```python
+@app.post("/items/")
+async def create_item(item: Item):
+    return item
+```
+
+### `@app.put(path, **kwargs)`
+
+Define a PUT endpoint.
+
+```python
+@app.put("/items/{item_id}")
+async def update_item(item_id: int, item: Item):
+    return {"item_id": item_id, **item.dict()}
+```
+
+### `@app.patch(path, **kwargs)`
+
+Define a PATCH endpoint.
+
+```python
+@app.patch("/items/{item_id}")
+async def partial_update_item(item_id: int, item: ItemUpdate):
+    return {"item_id": item_id}
+```
+
+### `@app.delete(path, **kwargs)`
+
+Define a DELETE endpoint.
+
+```python
+@app.delete("/items/{item_id}")
+async def delete_item(item_id: int):
+    return {"message": "Item deleted"}
+```
+
+### `@app.options(path, **kwargs)`
+
+Define an OPTIONS endpoint.
+
+### `@app.head(path, **kwargs)`
+
+Define a HEAD endpoint.
+
+### `@app.trace(path, **kwargs)`
+
+Define a TRACE endpoint.
+
+</Accordion>
+
+<Accordion title="add_api_route()">
+
+### `add_api_route(path, endpoint, **kwargs)`
+
+Add an API route programmatically.
+
+<ParamField path="path" type="str" required>
+  URL path for the route.
+</ParamField>
+
+<ParamField path="endpoint" type="Callable" required>
+  The endpoint function to call.
+</ParamField>
+
+<ParamField path="methods" type="list[str] | None">
+  HTTP methods for this route (e.g., `["GET", "POST"]`).
+</ParamField>
+
+<ParamField path="response_model" type="Any">
+  Pydantic model for response validation and serialization.
+</ParamField>
+
+<ParamField path="status_code" type="int | None">
+  Default status code for the response.
+</ParamField>
+
+<ParamField path="tags" type="list[str | Enum] | None">
+  Tags for OpenAPI documentation.
+</ParamField>
+
+<ParamField path="dependencies" type="Sequence[Depends] | None">
+  List of dependencies for this route.
+</ParamField>
+
+<ParamField path="summary" type="str | None">
+  Short summary for OpenAPI documentation.
+</ParamField>
+
+<ParamField path="description" type="str | None">
+  Detailed description for OpenAPI documentation.
+</ParamField>
+
+```python
+app.add_api_route(
+    "/items/",
+    read_items,
+    methods=["GET"],
+    tags=["items"],
+    summary="List all items"
+)
+```
+
+</Accordion>
+
+<Accordion title="include_router()">
+
+### `include_router(router, *, prefix="", tags=None, dependencies=None, **kwargs)`
+
+Include an `APIRouter` in the application.
+
+<ParamField path="router" type="APIRouter" required>
+  The APIRouter to include.
+</ParamField>
+
+<ParamField path="prefix" type="str" default="">
+  URL path prefix for all routes in the router.
+</ParamField>
+
+<ParamField path="tags" type="list[str | Enum] | None">
+  Tags to be applied to all routes in the router.
+</ParamField>
+
+<ParamField path="dependencies" type="Sequence[Depends] | None">
+  Dependencies to be applied to all routes in the router.
+</ParamField>
+
+<ParamField path="deprecated" type="bool | None">
+  Mark all routes in the router as deprecated.
+</ParamField>
+
+<ParamField path="include_in_schema" type="bool" default="True">
+  Include routes in OpenAPI schema.
+</ParamField>
+
+```python
+from fastapi import FastAPI
+from .routers import users, items
+
+app = FastAPI()
+
+app.include_router(
+    users.router,
+    prefix="/users",
+    tags=["users"],
+    dependencies=[Depends(get_token_header)],
+)
+app.include_router(items.router, prefix="/items", tags=["items"])
+```
+
+</Accordion>
+
+<Accordion title="add_middleware()">
+
+### `add_middleware(middleware_class, **options)`
+
+Add middleware to the application.
+
+```python
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+```
+
+</Accordion>
+
+<Accordion title="exception_handler()">
+
+### `@app.exception_handler(exception_class)`
+
+Register a custom exception handler.
+
+```python
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+
+app = FastAPI()
+
+class CustomException(Exception):
+    pass
+
+@app.exception_handler(CustomException)
+async def custom_exception_handler(request: Request, exc: CustomException):
+    return JSONResponse(
+        status_code=400,
+        content={"message": "Custom error occurred"},
+    )
+```
+
+</Accordion>
+
+<Accordion title="openapi()">
+
+### `openapi()`
+
+Generate and return the OpenAPI schema.
+
+```python
+schema = app.openapi()
+```
+
+</Accordion>
+
+<Accordion title="websocket()">
+
+### `@app.websocket(path)`
+
+Define a WebSocket endpoint.
+
+```python
+from fastapi import FastAPI, WebSocket
+
+app = FastAPI()
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    while True:
+        data = await websocket.receive_text()
+        await websocket.send_text(f"Message text was: {data}")
+```
+
+</Accordion>
+
+## Attributes
+
+<ResponseField name="state" type="State">
+  A state object for the application. The same object for the entire application.
+</ResponseField>
+
+<ResponseField name="dependency_overrides" type="dict[Callable, Callable]">
+  A dictionary with overrides for dependencies, useful for testing.
+  
+  ```python
+  app.dependency_overrides[get_db] = get_test_db
+  ```
+</ResponseField>
+
+<ResponseField name="router" type="APIRouter">
+  The internal router instance.
+</ResponseField>
+
+<ResponseField name="routes" type="list[BaseRoute]">
+  List of all registered routes.
+</ResponseField>
+
+<ResponseField name="openapi_schema" type="dict[str, Any] | None">
+  The cached OpenAPI schema.
+</ResponseField>
+
+<ResponseField name="openapi_version" type="str">
+  The OpenAPI version string (default: "3.1.0").
+  
+  ```python
+  app.openapi_version = "3.0.2"
+  ```
+</ResponseField>
+
+<ResponseField name="webhooks" type="APIRouter">
+  The webhooks router for OpenAPI webhooks documentation.
+</ResponseField>
+
+## Example
+
+```python
+from fastapi import FastAPI, Depends
+from pydantic import BaseModel
+
+app = FastAPI(
+    title="My API",
+    description="This is a very fancy API",
+    version="1.0.0",
+    docs_url="/documentation",
+)
+
+class Item(BaseModel):
+    name: str
+    price: float
+    is_offer: bool = False
+
+@app.get("/")
+async def read_root():
+    return {"message": "Hello World"}
+
+@app.get("/items/{item_id}")
+async def read_item(item_id: int, q: str | None = None):
+    return {"item_id": item_id, "q": q}
+
+@app.post("/items/")
+async def create_item(item: Item):
+    return item
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+```

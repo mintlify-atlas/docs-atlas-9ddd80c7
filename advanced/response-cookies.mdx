@@ -1,0 +1,311 @@
+---
+title: "Response Cookies"
+description: "Learn how to set, modify, and delete cookies in FastAPI responses"
+---
+
+## Overview
+
+Cookies are small pieces of data stored on the client side that are sent with every request to your server. FastAPI makes it easy to set and manage cookies in your responses.
+
+## Setting Cookies
+
+To set cookies, return a `Response` object and use the `set_cookie()` method:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+
+app = FastAPI()
+
+@app.post("/cookie/")
+def create_cookie():
+    content = {"message": "Come to the dark side, we have cookies"}
+    response = JSONResponse(content=content)
+    response.set_cookie(key="fakesession", value="fake-cookie-session-value")
+    return response
+```
+
+<Info>
+You need to return a `Response` object (or a subclass like `JSONResponse`) to set cookies. Returning a plain dict or Pydantic model won't allow cookie manipulation.
+</Info>
+
+## Cookie Parameters
+
+The `set_cookie()` method accepts several parameters to configure cookie behavior:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+
+app = FastAPI()
+
+@app.post("/cookie-with-params/")
+def create_cookie_with_params():
+    content = {"message": "Cookie set with parameters"}
+    response = JSONResponse(content=content)
+    response.set_cookie(
+        key="session_id",
+        value="abc123xyz",
+        max_age=3600,  # Cookie expires in 1 hour (seconds)
+        expires=None,  # Alternative to max_age (datetime)
+        path="/",  # Cookie available for entire domain
+        domain=None,  # Defaults to current domain
+        secure=True,  # Only sent over HTTPS
+        httponly=True,  # Not accessible via JavaScript
+        samesite="lax"  # CSRF protection: 'lax', 'strict', or 'none'
+    )
+    return response
+```
+
+### Cookie Parameters Explained
+
+- **`key`**: The cookie name
+- **`value`**: The cookie value
+- **`max_age`**: Cookie lifetime in seconds
+- **`expires`**: Expiration date (datetime object or seconds since epoch)
+- **`path`**: URL path where cookie is valid (default: `"/"`)
+- **`domain`**: Domain where cookie is valid
+- **`secure`**: If `True`, cookie only sent over HTTPS
+- **`httponly`**: If `True`, cookie not accessible via JavaScript (security feature)
+- **`samesite`**: CSRF protection (`"lax"`, `"strict"`, or `"none"`)
+
+<Warning>
+When setting `samesite="none"`, you must also set `secure=True`. This is required by modern browsers.
+</Warning>
+
+## Secure Cookies for Authentication
+
+For session cookies and authentication, use secure settings:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+import secrets
+
+app = FastAPI()
+
+@app.post("/login/")
+def login(username: str, password: str):
+    # Verify credentials (simplified example)
+    if username == "user" and password == "pass":
+        session_id = secrets.token_urlsafe(32)
+        response = JSONResponse(
+            content={"message": "Login successful"}
+        )
+        response.set_cookie(
+            key="session_id",
+            value=session_id,
+            max_age=86400,  # 24 hours
+            httponly=True,  # Prevent JavaScript access
+            secure=True,  # HTTPS only
+            samesite="lax"  # CSRF protection
+        )
+        return response
+    return JSONResponse(
+        content={"message": "Invalid credentials"},
+        status_code=401
+    )
+```
+
+<Tip>
+Always use `httponly=True` for session cookies to prevent XSS attacks, and `secure=True` in production to ensure cookies are only sent over HTTPS.
+</Tip>
+
+## Multiple Cookies
+
+Set multiple cookies in a single response:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+
+app = FastAPI()
+
+@app.post("/multiple-cookies/")
+def create_multiple_cookies():
+    response = JSONResponse(content={"message": "Multiple cookies set"})
+    
+    response.set_cookie(key="user_id", value="12345")
+    response.set_cookie(key="preferences", value="dark_mode")
+    response.set_cookie(
+        key="session",
+        value="abc123",
+        httponly=True,
+        secure=True
+    )
+    
+    return response
+```
+
+## Using Response Parameter
+
+Inject a `Response` parameter to set cookies while returning your data normally:
+
+```python
+from fastapi import FastAPI, Response
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class LoginResponse(BaseModel):
+    message: str
+    user_id: int
+
+@app.post("/login/", response_model=LoginResponse)
+def login(username: str, password: str, response: Response):
+    # Set cookie via injected Response parameter
+    response.set_cookie(
+        key="session_id",
+        value="abc123",
+        httponly=True
+    )
+    
+    # Return data normally
+    return LoginResponse(
+        message="Login successful",
+        user_id=42
+    )
+```
+
+<Note>
+This approach is cleaner when you want to leverage FastAPI's automatic response serialization while still setting cookies.
+</Note>
+
+## Deleting Cookies
+
+Delete a cookie by setting it with an expired date:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+
+app = FastAPI()
+
+@app.post("/logout/")
+def logout():
+    response = JSONResponse(content={"message": "Logged out"})
+    response.delete_cookie(key="session_id")
+    return response
+```
+
+Or use `set_cookie()` with `max_age=0`:
+
+```python
+@app.post("/logout-alt/")
+def logout_alt():
+    response = JSONResponse(content={"message": "Logged out"})
+    response.set_cookie(
+        key="session_id",
+        value="",
+        max_age=0
+    )
+    return response
+```
+
+## Reading Cookies
+
+Read cookies from incoming requests:
+
+```python
+from fastapi import Cookie, FastAPI
+from typing import Union
+
+app = FastAPI()
+
+@app.get("/items/")
+def read_items(session_id: Union[str, None] = Cookie(default=None)):
+    if session_id:
+        return {"session_id": session_id}
+    return {"message": "No session found"}
+```
+
+See the [Cookie Parameters](/tutorial/cookie-params) tutorial for more details on reading cookies.
+
+## Cookie Expiration
+
+### Using max_age
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+
+app = FastAPI()
+
+@app.post("/cookie-maxage/")
+def create_cookie_maxage():
+    response = JSONResponse(content={"message": "Cookie with max_age"})
+    response.set_cookie(
+        key="temp_token",
+        value="xyz789",
+        max_age=3600  # Expires in 1 hour
+    )
+    return response
+```
+
+### Using expires
+
+```python
+from datetime import datetime, timedelta
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+
+app = FastAPI()
+
+@app.post("/cookie-expires/")
+def create_cookie_expires():
+    expiration = datetime.utcnow() + timedelta(days=7)
+    response = JSONResponse(content={"message": "Cookie with expires"})
+    response.set_cookie(
+        key="remember_me",
+        value="true",
+        expires=expiration.strftime("%a, %d %b %Y %H:%M:%S GMT")
+    )
+    return response
+```
+
+## SameSite Cookie Attribute
+
+Protect against CSRF attacks with the `samesite` attribute:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+
+app = FastAPI()
+
+@app.post("/cookie-strict/")
+def create_strict_cookie():
+    response = JSONResponse(content={"message": "Strict cookie"})
+    response.set_cookie(
+        key="csrf_token",
+        value="token123",
+        samesite="strict"  # Never sent on cross-site requests
+    )
+    return response
+
+@app.post("/cookie-lax/")
+def create_lax_cookie():
+    response = JSONResponse(content={"message": "Lax cookie"})
+    response.set_cookie(
+        key="session",
+        value="session123",
+        samesite="lax"  # Sent on top-level navigation
+    )
+    return response
+```
+
+<Info>
+- `samesite="strict"`: Cookie never sent on cross-site requests
+- `samesite="lax"`: Cookie sent on top-level navigation (e.g., clicking a link)
+- `samesite="none"`: Cookie sent on all requests (requires `secure=True`)
+</Info>
+
+## Best Practices
+
+1. **Security first**: Always use `httponly=True` and `secure=True` for sensitive cookies
+2. **Set expiration**: Use `max_age` to control cookie lifetime
+3. **Use SameSite**: Set `samesite="lax"` or `"strict"` for CSRF protection
+4. **Path and domain**: Restrict cookies to specific paths and domains when appropriate
+5. **Don't store sensitive data**: Cookies are stored on the client and can be viewed
+6. **Sign cookies**: Consider signing cookie values to prevent tampering
+7. **HTTPS in production**: Always use HTTPS in production when setting `secure=True`

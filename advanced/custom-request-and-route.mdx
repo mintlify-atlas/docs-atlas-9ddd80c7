@@ -1,0 +1,329 @@
+---
+title: Custom Request and Route Classes
+description: Learn how to create custom Request and APIRoute classes to extend FastAPI's request handling behavior
+---
+
+FastAPI allows you to override the logic used by the `Request` and `APIRoute` classes. This is particularly useful when you need to customize how requests are processed before they reach your path operations.
+
+<Warning>
+This is an advanced feature. If you're just starting with FastAPI, consider using middleware or dependencies for most customization needs.
+</Warning>
+
+## When to Use Custom Classes
+
+Custom Request and Route classes are good alternatives to middleware when you need to:
+
+- **Transform request bodies**: Convert non-JSON formats (like MessagePack) to JSON
+- **Decompress data**: Handle gzip-compressed request bodies
+- **Log requests**: Automatically log all request bodies
+- **Add request metadata**: Inject custom attributes into request objects
+- **Measure performance**: Track request processing time
+
+<Info>
+Custom classes give you fine-grained control over request handling at the route level, whereas middleware operates globally.
+</Info>
+
+## Custom Request Class
+
+A custom `Request` class allows you to override how the request body is processed.
+
+### Example: Gzip Request Handling
+
+Here's how to create a custom request class that handles gzip-compressed bodies:
+
+```python
+import gzip
+from fastapi import FastAPI, Request
+from fastapi.routing import APIRoute
+
+class GzipRequest(Request):
+    async def body(self) -> bytes:
+        # Check if the request is gzip-compressed
+        if "gzip" not in self.headers.get("Content-Encoding", ""):
+            return await super().body()
+        
+        # Decompress the gzip body
+        body = await super().body()
+        return gzip.decompress(body)
+```
+
+This custom request class:
+1. Checks the `Content-Encoding` header for gzip
+2. If present, decompresses the body before returning it
+3. Otherwise, returns the body unchanged
+
+<Tip>
+By checking for the encoding header first, the same route can handle both compressed and uncompressed requests.
+</Tip>
+
+## Custom APIRoute Class
+
+To use your custom request class, you need to create a custom `APIRoute` class that instantiates it.
+
+### Creating a Custom Route
+
+```python
+from typing import Callable
+from fastapi import Response
+from fastapi.routing import APIRoute
+
+class GzipRoute(APIRoute):
+    def get_route_handler(self) -> Callable:
+        original_route_handler = super().get_route_handler()
+        
+        async def custom_route_handler(request: Request) -> Response:
+            # Create a GzipRequest from the original request
+            request = GzipRequest(request.scope, request.receive)
+            return await original_route_handler(request)
+        
+        return custom_route_handler
+```
+
+### Understanding the Components
+
+<Note>
+**Technical Details:**
+- `request.scope`: A Python dict containing request metadata (part of ASGI spec)
+- `request.receive`: A function to receive the request body (part of ASGI spec)
+- These components are all you need to create a new Request instance
+</Note>
+
+## Using Custom Routes in Your Application
+
+Once you've created your custom route class, you can use it in several ways.
+
+### Method 1: Application-Wide
+
+Apply the custom route to all endpoints in your application:
+
+```python
+from fastapi import FastAPI
+
+app = FastAPI()
+app.router.route_class = GzipRoute
+
+@app.post("/items/")
+async def create_item(item: dict):
+    # Request body is automatically decompressed if gzipped
+    return {"item": item}
+```
+
+### Method 2: Router-Specific
+
+Apply the custom route to specific routers:
+
+```python
+from fastapi import APIRouter, FastAPI
+
+router = APIRouter(route_class=GzipRoute)
+
+@router.post("/items/")
+async def create_item(item: dict):
+    return {"item": item}
+
+app = FastAPI()
+app.include_router(router)
+```
+
+<Info>
+Using router-specific custom routes gives you fine-grained control over which endpoints use the custom behavior.
+</Info>
+
+## Advanced Example: Request Timing
+
+Here's a more advanced example that adds response time tracking:
+
+```python
+import time
+from typing import Callable
+from fastapi import Request, Response, APIRouter
+from fastapi.routing import APIRoute
+
+class TimedRoute(APIRoute):
+    def get_route_handler(self) -> Callable:
+        original_route_handler = super().get_route_handler()
+        
+        async def custom_route_handler(request: Request) -> Response:
+            # Record start time
+            start_time = time.time()
+            
+            # Process the request
+            response: Response = await original_route_handler(request)
+            
+            # Calculate processing time
+            process_time = time.time() - start_time
+            
+            # Add custom header
+            response.headers["X-Process-Time"] = str(process_time)
+            
+            return response
+        
+        return custom_route_handler
+
+# Use in a router
+router = APIRouter(route_class=TimedRoute)
+
+@router.get("/users/{user_id}")
+async def get_user(user_id: int):
+    return {"user_id": user_id, "name": "John Doe"}
+```
+
+Now every response will include an `X-Process-Time` header showing how long the request took to process.
+
+## Accessing Request Body in Exception Handlers
+
+Custom routes can also help with error handling by preserving access to the request body:
+
+```python
+from fastapi import Request, Response, HTTPException
+from fastapi.routing import APIRoute
+from typing import Callable
+
+class LoggingRoute(APIRoute):
+    def get_route_handler(self) -> Callable:
+        original_route_handler = super().get_route_handler()
+        
+        async def custom_route_handler(request: Request) -> Response:
+            try:
+                # Process the request normally
+                return await original_route_handler(request)
+            except Exception as exc:
+                # Access request body in exception handler
+                body = await request.body()
+                print(f"Request failed: {body}")
+                
+                # Log the error with request details
+                print(f"Error: {exc}")
+                print(f"Path: {request.url.path}")
+                print(f"Method: {request.method}")
+                
+                # Re-raise the exception
+                raise
+        
+        return custom_route_handler
+```
+
+<Warning>
+The request body can only be read once. If you need to access it multiple times, store it in a variable or use `request.scope` to cache it.
+</Warning>
+
+## Real-World Example: MessagePack Support
+
+Here's a practical example that adds MessagePack support to FastAPI:
+
+```python
+import msgpack
+from fastapi import Request, Response
+from fastapi.routing import APIRoute
+from typing import Callable
+
+class MsgPackRequest(Request):
+    async def body(self) -> bytes:
+        body = await super().body()
+        
+        # Check if content-type is MessagePack
+        if "application/msgpack" in self.headers.get("Content-Type", ""):
+            # Unpack MessagePack and re-encode as JSON bytes
+            import json
+            data = msgpack.unpackb(body, raw=False)
+            return json.dumps(data).encode()
+        
+        return body
+
+class MsgPackRoute(APIRoute):
+    def get_route_handler(self) -> Callable:
+        original_route_handler = super().get_route_handler()
+        
+        async def custom_route_handler(request: Request) -> Response:
+            request = MsgPackRequest(request.scope, request.receive)
+            return await original_route_handler(request)
+        
+        return custom_route_handler
+
+# Usage
+from fastapi import FastAPI
+
+app = FastAPI()
+app.router.route_class = MsgPackRoute
+
+@app.post("/data/")
+async def receive_data(data: dict):
+    # Can receive both JSON and MessagePack
+    return {"received": data}
+```
+
+## Custom Request Attributes
+
+You can add custom attributes to your request class:
+
+```python
+from fastapi import Request
+import uuid
+
+class RequestWithID(Request):
+    @property
+    def request_id(self) -> str:
+        # Generate or retrieve request ID
+        if "request_id" not in self.scope:
+            self.scope["request_id"] = str(uuid.uuid4())
+        return self.scope["request_id"]
+
+class RequestIDRoute(APIRoute):
+    def get_route_handler(self) -> Callable:
+        original_route_handler = super().get_route_handler()
+        
+        async def custom_route_handler(request: Request) -> Response:
+            request = RequestWithID(request.scope, request.receive)
+            response = await original_route_handler(request)
+            
+            # Add request ID to response
+            response.headers["X-Request-ID"] = request.request_id
+            
+            return response
+        
+        return custom_route_handler
+```
+
+<Tip>
+Storing custom data in `request.scope` ensures it's available throughout the request lifecycle and to all middleware and dependencies.
+</Tip>
+
+## Best Practices
+
+When creating custom request and route classes:
+
+1. **Keep it simple**: Only override what you need
+2. **Handle errors gracefully**: Always have fallback behavior
+3. **Consider performance**: Avoid heavy processing in the request class
+4. **Document behavior**: Make it clear what your custom class does
+5. **Test thoroughly**: Test both normal and edge cases
+
+### Alternative Approaches
+
+Before implementing custom classes, consider:
+
+- **Middleware**: For application-wide request/response processing
+- **Dependencies**: For injection and validation logic  
+- **Background tasks**: For async logging and monitoring
+- **Exception handlers**: For custom error handling
+
+## Comparison: Custom Routes vs Middleware
+
+| Aspect | Custom Routes | Middleware |
+|--------|---------------|------------|
+| **Scope** | Per route or router | Application-wide |
+| **Flexibility** | Highly specific | Broad |
+| **Performance** | Better (runs only where needed) | Runs on every request |
+| **Complexity** | More complex to set up | Simpler to implement |
+| **Use case** | Specific endpoint behavior | Cross-cutting concerns |
+
+## Learn More
+
+- [FastAPI Middleware](/advanced/middleware)
+- [Starlette Request Documentation](https://www.starlette.io/requests/)
+- [ASGI Specification](https://asgi.readthedocs.io/)
+- [FastAPI Dependencies](/tutorial/dependencies)
+
+<Info>
+Custom request and route classes are part of FastAPI's advanced features that leverage Starlette's ASGI capabilities.
+</Info>

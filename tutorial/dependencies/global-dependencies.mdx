@@ -1,0 +1,486 @@
+---
+title: 'Global Dependencies'
+description: 'Learn how to apply dependencies across your entire FastAPI application or router groups for consistent authentication, logging, and validation'
+---
+
+# Global Dependencies
+
+When you need the same dependencies across many or all routes in your application, declaring them individually becomes tedious and error-prone. FastAPI allows you to declare **global dependencies** that automatically apply to multiple endpoints.
+
+## Application-Level Dependencies
+
+You can add dependencies to your entire FastAPI application using the `dependencies` parameter:
+
+```python
+from fastapi import Depends, FastAPI, Header, HTTPException
+
+
+async def verify_token(x_token: str = Header()):
+    if x_token != "fake-super-secret-token":
+        raise HTTPException(status_code=400, detail="X-Token header invalid")
+
+
+async def verify_key(x_key: str = Header()):
+    if x_key != "fake-super-secret-key":
+        raise HTTPException(status_code=400, detail="X-Key header invalid")
+    return x_key
+
+
+app = FastAPI(dependencies=[Depends(verify_token), Depends(verify_key)])
+
+
+@app.get("/items/")
+async def read_items():
+    return [{"item": "Portal Gun"}, {"item": "Plumbus"}]
+
+
+@app.get("/users/")
+async def read_users():
+    return [{"username": "Rick"}, {"username": "Morty"}]
+```
+
+### How It Works
+
+<Steps>
+
+<Step title="Dependencies are declared at app level">
+When you create your `FastAPI()` instance, you pass a list of dependencies.
+</Step>
+
+<Step title="Applied to every endpoint automatically">
+Every path operation in the application automatically has these dependencies applied.
+</Step>
+
+<Step title="Executed before each request">
+For every incoming request to any endpoint, these dependencies execute first.
+</Step>
+
+<Step title="No code duplication">
+You write the dependency declaration once and it applies everywhere.
+</Step>
+
+</Steps>
+
+<Info>
+This example is from the FastAPI source at `docs_src/dependencies/tutorial012_py310.py`. Both `/items/` and `/users/` endpoints require valid `x-token` and `x-key` headers without explicitly declaring them.
+</Info>
+
+## Router-Level Dependencies
+
+For more granular control, you can apply dependencies to router groups:
+
+```python
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException
+
+app = FastAPI()
+
+
+def verify_token(x_token: str = Header()):
+    if x_token != "fake-token":
+        raise HTTPException(status_code=400, detail="Invalid token")
+
+
+def verify_admin(x_admin: str = Header()):
+    if x_admin != "true":
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+
+# Public router - no dependencies
+public_router = APIRouter(prefix="/public")
+
+@public_router.get("/info/")
+async def public_info():
+    return {"message": "This is public"}
+
+
+# Protected router - requires authentication
+protected_router = APIRouter(
+    prefix="/api",
+    dependencies=[Depends(verify_token)]
+)
+
+@protected_router.get("/data/")
+async def get_data():
+    return {"data": "sensitive information"}
+
+
+# Admin router - requires both authentication and admin privileges
+admin_router = APIRouter(
+    prefix="/admin",
+    dependencies=[Depends(verify_token), Depends(verify_admin)]
+)
+
+@admin_router.delete("/users/{user_id}")
+async def delete_user(user_id: int):
+    return {"deleted": user_id}
+
+
+app.include_router(public_router)
+app.include_router(protected_router)
+app.include_router(admin_router)
+```
+
+### Router Hierarchy
+
+Routers can be nested, and dependencies accumulate:
+
+```python
+# Base router with token verification
+api_router = APIRouter(
+    prefix="/api",
+    dependencies=[Depends(verify_token)]
+)
+
+# Nested router adds rate limiting
+v1_router = APIRouter(
+    prefix="/v1",
+    dependencies=[Depends(rate_limit)]
+)
+
+# This endpoint has BOTH verify_token AND rate_limit
+@v1_router.get("/users/")
+async def list_users():
+    return []
+
+api_router.include_router(v1_router)
+app.include_router(api_router)
+
+# Full path: /api/v1/users/
+# Dependencies: verify_token (from api_router) + rate_limit (from v1_router)
+```
+
+<Note>
+Dependencies from parent routers are executed **before** dependencies from child routers, which are executed **before** path operation dependencies.
+</Note>
+
+## Common Use Cases
+
+### 1. Global Authentication
+
+Apply authentication to your entire API:
+
+```python
+from fastapi import Depends, FastAPI, Header, HTTPException
+
+
+def authenticate(authorization: str = Header()):
+    token = authorization.replace("Bearer ", "")
+    user = verify_jwt(token)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    return user
+
+
+app = FastAPI(dependencies=[Depends(authenticate)])
+
+# All endpoints now require authentication
+@app.get("/profile/")
+async def get_profile():
+    return {"profile": "data"}
+
+@app.get("/settings/")
+async def get_settings():
+    return {"settings": "data"}
+```
+
+### 2. Database Connection Management
+
+```python
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+# Apply to a router handling all database operations
+db_router = APIRouter(
+    prefix="/db",
+    dependencies=[Depends(get_db)]
+)
+
+@db_router.get("/users/")
+async def get_users():
+    # Database connection is established
+    return []
+
+@db_router.post("/users/")
+async def create_user(user: User):
+    # Same database dependency
+    return user
+```
+
+### 3. Request Logging
+
+```python
+from datetime import datetime
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+def log_request(request: Request):
+    logger.info(f"{datetime.now()}: {request.method} {request.url.path}")
+
+
+app = FastAPI(dependencies=[Depends(log_request)])
+
+# All requests are automatically logged
+```
+
+### 4. API Versioning
+
+```python
+def check_api_version(x_api_version: str = Header(alias="X-API-Version")):
+    supported_versions = ["1.0", "2.0", "3.0"]
+    if x_api_version not in supported_versions:
+        raise HTTPException(
+            status_code=400,
+            detail=f"API version {x_api_version} not supported"
+        )
+    return x_api_version
+
+
+app = FastAPI(dependencies=[Depends(check_api_version)])
+```
+
+## Combining Different Levels
+
+You can combine global, router, and path operation dependencies:
+
+```python
+# Global: All requests need authentication
+app = FastAPI(dependencies=[Depends(verify_token)])
+
+# Router: Admin routes need admin check
+admin_router = APIRouter(
+    prefix="/admin",
+    dependencies=[Depends(verify_admin)]
+)
+
+# Path: This specific operation needs extra validation
+@admin_router.delete(
+    "/users/{user_id}",
+    dependencies=[Depends(verify_deletion_allowed)]
+)
+async def delete_user(user_id: int):
+    # This endpoint has THREE levels of dependencies:
+    # 1. verify_token (from app)
+    # 2. verify_admin (from router)
+    # 3. verify_deletion_allowed (from path operation)
+    return {"deleted": user_id}
+
+app.include_router(admin_router)
+```
+
+### Execution Order
+
+<Info>
+Dependencies execute in this order:
+1. Application-level dependencies
+2. Router-level dependencies (parent to child)
+3. Path operation-level dependencies
+4. Function parameter dependencies
+</Info>
+
+## Excluding Specific Routes
+
+If you need most routes to have a dependency but want to exclude some:
+
+```python
+# Option 1: Create separate apps/routers
+public_app = FastAPI()  # No dependencies
+private_app = FastAPI(dependencies=[Depends(verify_token)])
+
+# Option 2: Use router groups
+app = FastAPI()
+
+public_router = APIRouter(prefix="/public")
+protected_router = APIRouter(
+    prefix="/api",
+    dependencies=[Depends(verify_token)]
+)
+
+@public_router.get("/health/")
+async def health_check():
+    return {"status": "healthy"}
+
+@protected_router.get("/data/")
+async def get_data():
+    return {"data": "protected"}
+
+app.include_router(public_router)
+app.include_router(protected_router)
+```
+
+## Dependencies with Return Values
+
+Even global dependencies can return values, but you need to explicitly include them in path operations that need them:
+
+```python
+def get_api_key(x_api_key: str = Header()):
+    if x_api_key != "secret":
+        raise HTTPException(status_code=401)
+    return x_api_key
+
+
+app = FastAPI(dependencies=[Depends(get_api_key)])
+
+
+@app.get("/data/")
+async def get_data():
+    # API key is verified but not accessible here
+    return {"data": "content"}
+
+
+@app.get("/info/")
+async def get_info(api_key: str = Depends(get_api_key)):
+    # API key is verified AND accessible here
+    # But get_api_key only executes once (cached)
+    return {"api_key": api_key, "info": "content"}
+```
+
+<Warning>
+Global dependencies are executed for every request, so keep them lightweight. Expensive operations should be cached or moved to path-specific dependencies.
+</Warning>
+
+## Testing with Global Dependencies
+
+Global dependencies can be overridden during testing:
+
+```python
+from fastapi.testclient import TestClient
+
+# Original app with real authentication
+app = FastAPI(dependencies=[Depends(verify_token)])
+
+@app.get("/data/")
+async def get_data():
+    return {"data": "secret"}
+
+# For testing, override the dependency
+def mock_verify_token():
+    return "mock-token"
+
+app.dependency_overrides[verify_token] = mock_verify_token
+
+client = TestClient(app)
+response = client.get("/data/")  # No need for real token
+assert response.status_code == 200
+```
+
+## Real-World Example: Microservice Gateway
+
+```python
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
+import logging
+import time
+
+logger = logging.getLogger(__name__)
+
+# Track request IDs for distributed tracing
+def assign_request_id(request: Request):
+    request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+    request.state.request_id = request_id
+    return request_id
+
+
+# Log all requests
+def log_request(request: Request, request_id: str = Depends(assign_request_id)):
+    logger.info(
+        f"Request {request_id}: {request.method} {request.url.path}",
+        extra={"request_id": request_id}
+    )
+
+
+# Verify service-to-service authentication
+def verify_service_token(x_service_token: str = Header()):
+    if not is_valid_service_token(x_service_token):
+        raise HTTPException(status_code=401, detail="Invalid service token")
+
+
+# Check rate limits
+def rate_limit(request: Request):
+    client_id = request.headers.get("X-Client-ID", request.client.host)
+    if is_rate_limited(client_id):
+        raise HTTPException(status_code=429, detail="Rate limit exceeded")
+
+
+# Create app with all global dependencies
+app = FastAPI(
+    dependencies=[
+        Depends(assign_request_id),
+        Depends(log_request),
+        Depends(verify_service_token),
+        Depends(rate_limit),
+    ]
+)
+
+
+@app.get("/service/data/")
+async def get_service_data(request: Request):
+    # All global dependencies have executed
+    request_id = request.state.request_id
+    return {
+        "request_id": request_id,
+        "data": "service data"
+    }
+```
+
+## Best Practices
+
+<Steps>
+
+<Step title="Keep global dependencies lightweight">
+Global dependencies run on every request. Avoid expensive operations or move them to route-specific dependencies.
+</Step>
+
+<Step title="Use router groups for organization">
+Group related routes under routers with shared dependencies rather than applying everything globally.
+</Step>
+
+<Step title="Consider execution order">
+Remember that global dependencies execute first. Design your dependency chain accordingly.
+</Step>
+
+<Step title="Document global requirements">
+Make sure API documentation clearly shows what headers or parameters are required for all endpoints.
+</Step>
+
+<Step title="Use dependency overrides for testing">
+Take advantage of FastAPI's dependency override system to make testing easier.
+</Step>
+
+<Step title="Monitor performance">
+Global dependencies impact every request. Monitor their performance and optimize as needed.
+</Step>
+
+</Steps>
+
+## Scope Considerations
+
+Global dependencies respect the same scoping rules as other dependencies:
+
+```python
+def app_level_dependency(scope: Literal["function", "request"] = "request"):
+    # Scope determines when the dependency is executed and cleaned up
+    pass
+
+app = FastAPI(
+    dependencies=[Depends(app_level_dependency)]
+)
+```
+
+The `scope` parameter (defined in `fastapi/params.py:750`) controls:
+- `"request"`: Dependency executes and cleans up per request (default for generators)
+- `"function"`: Dependency is scoped to the function call
+
+## Next Steps
+
+Now that you understand global dependencies, explore:
+
+- Advanced dependency patterns and dependency override for testing
+- Using dependencies with background tasks
+- Creating custom dependency classes for complex scenarios
+- Security dependencies for OAuth2, JWT, and API keys

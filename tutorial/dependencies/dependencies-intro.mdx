@@ -1,0 +1,217 @@
+---
+title: 'Introduction to Dependencies'
+description: 'Learn how to use FastAPI dependency injection system to share logic, reduce code duplication, and manage resources efficiently'
+---
+
+# Introduction to Dependencies
+
+FastAPI includes a powerful and intuitive **Dependency Injection** system that makes it easy to integrate components with your path operations and share common logic across your application.
+
+## What is Dependency Injection?
+
+Dependency Injection is a design pattern where your code declares the components it needs to work, and the framework automatically provides them. In FastAPI, this is handled through the `Depends()` function.
+
+<Info>
+Dependency Injection helps you:
+- Reduce code duplication
+- Share logic across multiple path operations
+- Manage database connections and sessions
+- Enforce authentication and authorization
+- Validate and process common parameters
+</Info>
+
+## Your First Dependency
+
+Let's start with a simple example. Imagine you have common query parameters used across multiple endpoints:
+
+```python
+from fastapi import Depends, FastAPI
+
+app = FastAPI()
+
+
+async def common_parameters(q: str | None = None, skip: int = 0, limit: int = 100):
+    return {"q": q, "skip": skip, "limit": limit}
+
+
+@app.get("/items/")
+async def read_items(commons: dict = Depends(common_parameters)):
+    return commons
+
+
+@app.get("/users/")
+async def read_users(commons: dict = Depends(common_parameters)):
+    return commons
+```
+
+### How It Works
+
+<Steps>
+
+<Step title="Define the dependency function">
+Create a function with the parameters you need. This function can be `async` or regular `def`:
+
+```python
+async def common_parameters(q: str | None = None, skip: int = 0, limit: int = 100):
+    return {"q": q, "skip": skip, "limit": limit}
+```
+</Step>
+
+<Step title="Use Depends() in your path operation">
+Pass the dependency function to `Depends()` as a parameter in your path operation:
+
+```python
+@app.get("/items/")
+async def read_items(commons: dict = Depends(common_parameters)):
+    return commons
+```
+</Step>
+
+<Step title="FastAPI handles the rest">
+When a request comes in, FastAPI:
+1. Calls the dependency function with the correct parameters from the request
+2. Gets the result from the dependency
+3. Passes that result to your path operation function
+</Step>
+
+</Steps>
+
+## The Depends Function
+
+The `Depends` class is defined in `fastapi/params.py:747` as:
+
+```python
+@dataclass
+class Depends:
+    dependency: Callable[..., Any] | None = None
+    use_cache: bool = True
+    scope: Literal["function", "request"] | None = None
+```
+
+### Key Features
+
+- **dependency**: The callable (function or class) that will be executed
+- **use_cache**: Whether to cache the result during a request (default: `True`)
+- **scope**: Controls when the dependency is executed and cleaned up
+
+<Note>
+By default, dependencies are cached per request. If the same dependency is used multiple times in a single request, it's only executed once and the result is reused.
+</Note>
+
+## Automatic Type Conversion and Validation
+
+Just like path operation parameters, dependency parameters benefit from automatic:
+
+- Type conversion
+- Data validation  
+- Automatic documentation
+- Editor support with autocompletion
+
+```python
+async def pagination_params(
+    skip: int = 0,  # Must be an integer
+    limit: int = 100  # Must be an integer
+):
+    if limit > 100:
+        limit = 100
+    return {"skip": skip, "limit": limit}
+```
+
+<Warning>
+If validation fails (e.g., `skip` is not an integer), FastAPI automatically returns a 422 error with details about what went wrong.
+</Warning>
+
+## When to Use Dependencies
+
+Dependencies are perfect for:
+
+### 1. Shared Query Parameters
+
+```python
+def common_query_params(q: str | None = None, skip: int = 0, limit: int = 100):
+    return {"q": q, "skip": skip, "limit": limit}
+```
+
+### 2. Database Sessions
+
+```python
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+```
+
+### 3. Authentication
+
+```python
+def get_current_user(token: str = Header()):
+    user = decode_token(token)
+    if not user:
+        raise HTTPException(status_code=401)
+    return user
+```
+
+### 4. Rate Limiting
+
+```python
+def rate_limit_check(request: Request):
+    client_ip = request.client.host
+    if is_rate_limited(client_ip):
+        raise HTTPException(status_code=429)
+```
+
+## Dependencies Can Be Async or Sync
+
+FastAPI automatically handles both:
+
+```python
+# Async dependency
+async def get_async_data():
+    data = await fetch_from_database()
+    return data
+
+# Sync dependency  
+def get_sync_data():
+    return {"message": "This runs in a thread pool"}
+
+# Both work in the same path operation
+@app.get("/mixed/")
+async def mixed_dependencies(
+    async_data = Depends(get_async_data),
+    sync_data = Depends(get_sync_data)
+):
+    return {"async": async_data, "sync": sync_data}
+```
+
+<Info>
+Sync dependencies in async path operations run in an external thread pool, so they don't block the async event loop.
+</Info>
+
+## The Dependant Model
+
+Internally, FastAPI uses a `Dependant` model (defined in `fastapi/dependencies/models.py:32`) to represent dependencies:
+
+```python
+@dataclass
+class Dependant:
+    path_params: list[ModelField] = field(default_factory=list)
+    query_params: list[ModelField] = field(default_factory=list)
+    header_params: list[ModelField] = field(default_factory=list)
+    cookie_params: list[ModelField] = field(default_factory=list)
+    body_params: list[ModelField] = field(default_factory=list)
+    dependencies: list["Dependant"] = field(default_factory=list)
+    # ... more fields
+```
+
+This model tracks all the parameters and sub-dependencies, enabling FastAPI to build a complete dependency graph and execute everything in the correct order.
+
+## Next Steps
+
+Now that you understand the basics of dependencies, you can learn about:
+
+- Using classes as dependencies for more complex logic
+- Creating sub-dependencies (dependencies that depend on other dependencies)
+- Applying dependencies at the path operation decorator level
+- Setting up global dependencies for your entire application

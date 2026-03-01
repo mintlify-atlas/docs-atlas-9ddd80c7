@@ -1,0 +1,269 @@
+---
+title: Using Dataclasses
+description: Learn how to use Python dataclasses with FastAPI for data validation and serialization
+---
+
+FastAPI is built on top of **Pydantic**, but it also supports using Python's standard `dataclasses` for request and response models. This provides flexibility when working with existing codebases or when you prefer the simplicity of dataclasses.
+
+## Basic Dataclass Usage
+
+You can use standard Python dataclasses directly in your FastAPI path operations:
+
+```python
+from dataclasses import dataclass
+from fastapi import FastAPI
+
+app = FastAPI()
+
+@dataclass
+class Item:
+    name: str
+    price: float
+    description: str | None = None
+    tax: float | None = None
+
+@app.post("/items/")
+async def create_item(item: Item):
+    return item
+```
+
+FastAPI will automatically:
+- Validate the incoming data
+- Serialize responses to JSON
+- Generate OpenAPI documentation
+- Provide interactive API docs
+
+<Note>
+This works because Pydantic has internal support for standard dataclasses. FastAPI converts them to Pydantic's own dataclasses under the hood.
+</Note>
+
+## Dataclasses vs Pydantic Models
+
+While dataclasses work well with FastAPI, there are important differences to consider:
+
+| Feature | Dataclasses | Pydantic Models |
+|---------|-------------|----------------|
+| Validation | Basic type checking | Advanced validation with constraints |
+| Default values | Simple defaults | Field validators, computed fields |
+| JSON serialization | Requires conversion | Built-in optimized serialization |
+| Custom validators | Limited | Extensive support |
+| Performance | Good | Better (Rust core) |
+
+<Warning>
+Dataclasses can't do everything Pydantic models can do. For complex validation requirements, custom validators, or advanced features, you'll need to use Pydantic models.
+</Warning>
+
+## Response Models with Dataclasses
+
+Dataclasses work seamlessly in the `response_model` parameter:
+
+```python
+from dataclasses import dataclass
+from fastapi import FastAPI
+
+app = FastAPI()
+
+@dataclass
+class User:
+    id: int
+    username: str
+    email: str
+    full_name: str | None = None
+
+@app.get("/users/{user_id}", response_model=User)
+async def get_user(user_id: int):
+    return {
+        "id": user_id,
+        "username": "johndoe",
+        "email": "john@example.com",
+        "full_name": "John Doe"
+    }
+```
+
+The dataclass is automatically converted to a Pydantic dataclass, and its schema appears in the API documentation.
+
+## Nested Dataclasses
+
+You can combine dataclasses with type annotations to create nested data structures:
+
+```python
+from dataclasses import dataclass, field
+from fastapi import FastAPI
+
+app = FastAPI()
+
+@dataclass
+class Item:
+    name: str
+    price: float
+    tags: list[str] = field(default_factory=list)
+
+@dataclass
+class Order:
+    id: int
+    items: list[Item]
+    customer_name: str
+
+@app.post("/orders/")
+async def create_order(order: Order):
+    return order
+```
+
+<Info>
+For nested dataclasses, you might need to use `field()` from the `dataclasses` module to set default factories for mutable default values like lists and dictionaries.
+</Info>
+
+## Using Pydantic Dataclasses
+
+If you encounter issues with standard dataclasses (especially with complex nested structures), you can use `pydantic.dataclasses` as a drop-in replacement:
+
+```python
+from dataclasses import field
+from pydantic.dataclasses import dataclass
+from fastapi import FastAPI
+
+app = FastAPI()
+
+@dataclass
+class Item:
+    name: str
+    price: float
+    tags: list[str] = field(default_factory=list)
+
+@dataclass
+class Author:
+    name: str
+    email: str
+    items: list[Item] = field(default_factory=list)
+
+@app.post("/authors/", response_model=Author)
+async def create_author(author: Author):
+    return author
+
+@app.get("/authors/", response_model=list[Author])
+def get_authors():
+    # Regular function (not async) works fine
+    return [
+        {
+            "name": "John Doe",
+            "email": "john@example.com",
+            "items": [
+                {"name": "Widget", "price": 9.99, "tags": ["gadget"]}
+            ]
+        }
+    ]
+```
+
+<Tip>
+`pydantic.dataclasses` provides better compatibility with FastAPI's automatic documentation generation and validation, especially for complex nested structures.
+</Tip>
+
+## When to Use Dataclasses
+
+Dataclasses are a good choice when:
+
+- **Migrating existing code**: You have existing dataclasses in your codebase
+- **Simple data structures**: Your models don't need complex validation
+- **Familiarity**: Your team is more comfortable with standard Python dataclasses
+- **Simplicity**: You prefer the cleaner syntax without inheritance
+
+## When to Use Pydantic Models
+
+Choose Pydantic models when you need:
+
+- **Advanced validation**: Field constraints, custom validators, regex patterns
+- **Computed fields**: Fields calculated from other fields
+- **Custom serialization**: Control over JSON serialization behavior
+- **ORM integration**: Working with databases and SQLAlchemy
+- **Better performance**: Optimized JSON serialization with Rust core
+
+## Data Validation and Serialization
+
+Both dataclasses and Pydantic models provide:
+
+✅ **Data validation**: Type checking and coercion
+✅ **Data serialization**: Converting to JSON-compatible formats
+✅ **Documentation**: Automatic OpenAPI schema generation
+✅ **Editor support**: Type hints and autocomplete
+
+```python
+from dataclasses import dataclass
+from fastapi import FastAPI, HTTPException
+
+app = FastAPI()
+
+@dataclass
+class Product:
+    id: int
+    name: str
+    price: float
+    in_stock: bool = True
+
+@app.post("/products/")
+async def create_product(product: Product):
+    # FastAPI automatically validates:
+    # - id is an integer
+    # - name is a string
+    # - price is a float
+    # - in_stock is a boolean (defaults to True)
+    
+    if product.price < 0:
+        raise HTTPException(status_code=400, detail="Price cannot be negative")
+    
+    return {"message": "Product created", "product": product}
+```
+
+## Combining Dataclasses with Type Annotations
+
+You can mix dataclasses with standard type annotations to create flexible data structures:
+
+```python
+from dataclasses import dataclass
+from typing import Optional
+from fastapi import FastAPI
+
+app = FastAPI()
+
+@dataclass
+class Address:
+    street: str
+    city: str
+    country: str
+    postal_code: Optional[str] = None
+
+@dataclass
+class Customer:
+    name: str
+    email: str
+    addresses: list[Address]
+
+@app.post("/customers/")
+async def create_customer(customer: Customer):
+    return customer
+
+@app.get("/customers/{customer_id}", response_model=Customer)
+async def get_customer(customer_id: int):
+    return {
+        "name": "Alice Smith",
+        "email": "alice@example.com",
+        "addresses": [
+            {
+                "street": "123 Main St",
+                "city": "Springfield",
+                "country": "USA"
+            }
+        ]
+    }
+```
+
+## Learn More
+
+For more advanced usage and options:
+
+- [Pydantic Dataclasses Documentation](https://docs.pydantic.dev/latest/concepts/dataclasses/)
+- [Python Dataclasses Documentation](https://docs.python.org/3/library/dataclasses.html)
+- [FastAPI Response Models](/advanced/response-models)
+
+<Info>
+Dataclass support has been available since FastAPI version 0.67.0.
+</Info>

@@ -1,122 +1,242 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "FastAPI",
+  "theme": "palm",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#009688",
+    "light": "#4DB6AC",
+    "dark": "#00695C"
   },
-  "favicon": "/favicon.svg",
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/fastapi/fastapi"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/fastapi/fastapi"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Get Started",
             "pages": [
-              "index",
+              "introduction",
+              "installation",
               "quickstart",
-              "development"
+              "tutorial/first-steps"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Tutorial",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "tutorial/path-parameters",
+              "tutorial/query-parameters",
+              "tutorial/request-body",
+              "tutorial/request-forms",
+              "tutorial/request-files",
+              "tutorial/response-model",
+              "tutorial/extra-models",
+              "tutorial/response-status-code",
+              "tutorial/extra-data-types",
+              "tutorial/cookie-params",
+              "tutorial/header-params"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Dependencies",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "tutorial/dependencies/dependencies-intro",
+              "tutorial/dependencies/classes-as-dependencies",
+              "tutorial/dependencies/sub-dependencies",
+              "tutorial/dependencies/dependencies-in-path",
+              "tutorial/dependencies/global-dependencies"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "Security",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "tutorial/security/security-intro",
+              "tutorial/security/first-steps",
+              "tutorial/security/get-current-user",
+              "tutorial/security/oauth2-jwt",
+              "tutorial/security/oauth2-scopes"
+            ]
+          },
+          {
+            "group": "Application Structure",
+            "pages": [
+              "tutorial/bigger-applications",
+              "tutorial/background-tasks",
+              "tutorial/metadata",
+              "tutorial/static-files",
+              "tutorial/testing"
+            ]
+          },
+          {
+            "group": "Database",
+            "pages": [
+              "tutorial/sql-databases",
+              "tutorial/async-sql-databases"
+            ]
+          },
+          {
+            "group": "Deployment",
+            "pages": [
+              "deployment/index",
+              "deployment/docker",
+              "deployment/server-workers",
+              "deployment/https",
+              "deployment/cloud"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "Advanced",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Advanced Features",
             "pages": [
-              "api-reference/introduction"
+              "advanced/path-operation-advanced",
+              "advanced/additional-status-codes",
+              "advanced/response-directly",
+              "advanced/custom-response",
+              "advanced/response-cookies",
+              "advanced/response-headers",
+              "advanced/response-change-status-code"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "Middleware & Events",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "advanced/middleware",
+              "advanced/cors",
+              "advanced/events",
+              "advanced/behind-a-proxy"
+            ]
+          },
+          {
+            "group": "WebSockets & Streaming",
+            "pages": [
+              "advanced/websockets",
+              "advanced/server-sent-events",
+              "advanced/streaming"
+            ]
+          },
+          {
+            "group": "Advanced Dependencies",
+            "pages": [
+              "advanced/advanced-dependencies",
+              "advanced/dependency-overrides",
+              "advanced/sub-applications"
+            ]
+          },
+          {
+            "group": "Advanced Validation",
+            "pages": [
+              "advanced/dataclasses",
+              "advanced/custom-request-and-route",
+              "advanced/settings"
+            ]
+          },
+          {
+            "group": "OpenAPI Customization",
+            "pages": [
+              "advanced/extending-openapi",
+              "advanced/openapi-callbacks",
+              "advanced/openapi-webhooks",
+              "advanced/conditional-openapi"
+            ]
+          },
+          {
+            "group": "Templates & GraphQL",
+            "pages": [
+              "advanced/templates",
+              "advanced/graphql"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core",
+            "pages": [
+              "api/fastapi",
+              "api/apirouter",
+              "api/request",
+              "api/response",
+              "api/websocket"
+            ]
+          },
+          {
+            "group": "Parameters",
+            "pages": [
+              "api/path",
+              "api/query",
+              "api/body",
+              "api/header",
+              "api/cookie",
+              "api/form",
+              "api/file"
+            ]
+          },
+          {
+            "group": "Dependencies",
+            "pages": [
+              "api/depends",
+              "api/security"
+            ]
+          },
+          {
+            "group": "Security",
+            "pages": [
+              "api/security/oauth2",
+              "api/security/http",
+              "api/security/api-key",
+              "api/security/openid-connect"
+            ]
+          },
+          {
+            "group": "Responses",
+            "pages": [
+              "api/responses/json-response",
+              "api/responses/html-response",
+              "api/responses/streaming-response",
+              "api/responses/file-response",
+              "api/responses/redirect-response",
+              "api/responses/event-source-response"
+            ]
+          },
+          {
+            "group": "Middleware",
+            "pages": [
+              "api/middleware/cors",
+              "api/middleware/gzip",
+              "api/middleware/trusted-host",
+              "api/middleware/httpsredirect"
+            ]
+          },
+          {
+            "group": "Utilities",
+            "pages": [
+              "api/background-tasks",
+              "api/upload-file",
+              "api/http-exception",
+              "api/test-client",
+              "api/status",
+              "api/encoders"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

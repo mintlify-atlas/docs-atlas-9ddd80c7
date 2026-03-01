@@ -1,0 +1,302 @@
+---
+title: RedirectResponse
+description: Response class for HTTP redirects with support for various redirect status codes
+---
+
+`RedirectResponse` creates HTTP redirect responses, sending clients to a different URL. It supports various redirect types through different HTTP status codes.
+
+## Import
+
+```python
+from fastapi.responses import RedirectResponse
+```
+
+## Class Signature
+
+```python
+class RedirectResponse(Response):
+    def __init__(
+        self,
+        url: str,
+        status_code: int = 307,
+        headers: dict | None = None,
+        background: BackgroundTask | None = None,
+    )
+```
+
+## Constructor Parameters
+
+<ParamField path="url" type="str" required>
+  The URL to redirect to. Can be absolute (`https://example.com`) or relative (`/path`).
+</ParamField>
+
+<ParamField path="status_code" type="int" default="307">
+  The HTTP redirect status code. Common values:
+  - `301` - Moved Permanently (permanent redirect, method may change to GET)
+  - `302` - Found (temporary redirect, method may change to GET)
+  - `303` - See Other (redirect after POST, method changes to GET)
+  - `307` - Temporary Redirect (temporary, preserves method)
+  - `308` - Permanent Redirect (permanent, preserves method)
+</ParamField>
+
+<ParamField path="headers" type="dict | None" default="None">
+  Additional HTTP headers to include in the response.
+</ParamField>
+
+<ParamField path="background" type="BackgroundTask | None" default="None">
+  Background task to run after sending the redirect.
+</ParamField>
+
+## Usage
+
+### Basic Redirect
+
+Redirect to an external URL:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
+
+app = FastAPI()
+
+@app.get("/typer")
+async def redirect_typer():
+    return RedirectResponse("https://typer.tiangolo.com")
+```
+
+### Relative Redirect
+
+Redirect to another endpoint in your API:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
+
+app = FastAPI()
+
+@app.get("/old-path")
+async def old_path():
+    return RedirectResponse("/new-path")
+
+@app.get("/new-path")
+async def new_path():
+    return {"message": "This is the new location"}
+```
+
+### Permanent Redirect (301)
+
+Use for permanently moved resources:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
+
+app = FastAPI()
+
+@app.get("/old-api")
+async def old_api():
+    return RedirectResponse(
+        url="/v2/api",
+        status_code=301  # Permanent redirect
+    )
+```
+
+### Temporary Redirect (307)
+
+Default behavior, preserves the HTTP method:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
+
+app = FastAPI()
+
+@app.post("/submit")
+async def submit_form():
+    # Process form data...
+    return RedirectResponse(
+        url="/success",
+        status_code=307  # Preserves POST method
+    )
+```
+
+### See Other (303)
+
+Redirect after POST to a GET endpoint:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
+
+app = FastAPI()
+
+@app.post("/create")
+async def create_item():
+    # Create item...
+    item_id = "123"
+    return RedirectResponse(
+        url=f"/items/{item_id}",
+        status_code=303  # Changes POST to GET
+    )
+
+@app.get("/items/{item_id}")
+async def get_item(item_id: str):
+    return {"item_id": item_id}
+```
+
+### With Custom Headers
+
+Add custom headers to the redirect:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
+
+app = FastAPI()
+
+@app.get("/redirect")
+async def redirect_with_headers():
+    return RedirectResponse(
+        url="/destination",
+        headers={
+            "X-Custom-Header": "value",
+            "Cache-Control": "no-cache"
+        }
+    )
+```
+
+### Conditional Redirect
+
+Redirect based on conditions:
+
+```python
+from fastapi import FastAPI, Request
+from fastapi.responses import RedirectResponse, JSONResponse
+
+app = FastAPI()
+
+@app.get("/dashboard")
+async def dashboard(request: Request, authenticated: bool = False):
+    if not authenticated:
+        return RedirectResponse("/login")
+    return JSONResponse({"message": "Welcome to dashboard"})
+```
+
+## HTTP Redirect Status Codes
+
+### 301 - Moved Permanently
+
+- Use when the resource has permanently moved
+- Browsers and search engines update their bookmarks/indexes
+- Future requests should use the new URL
+- May change request method to GET
+
+### 302 - Found
+
+- Temporary redirect
+- Original URI should be used for future requests
+- May change request method to GET
+- Most commonly used historically, but 307/308 are preferred now
+
+### 303 - See Other
+
+- Used after POST/PUT/DELETE operations
+- Always changes the request method to GET
+- Common pattern: POST to create resource, then 303 to GET that resource
+
+### 307 - Temporary Redirect (Default)
+
+- Temporary redirect
+- **Preserves the HTTP method and body**
+- Use when method preservation is important
+- FastAPI's default redirect status code
+
+### 308 - Permanent Redirect
+
+- Permanent redirect
+- **Preserves the HTTP method and body**
+- More semantically correct than 301 for modern applications
+- Use when permanently moving API endpoints that receive POST/PUT requests
+
+## Method Preservation
+
+### Codes that preserve method (307, 308)
+
+```python
+# POST request to /old-endpoint
+# → 307 redirect to /new-endpoint
+# → POST request to /new-endpoint (method preserved)
+```
+
+### Codes that may change to GET (301, 302, 303)
+
+```python
+# POST request to /old-endpoint
+# → 301 redirect to /new-endpoint
+# → GET request to /new-endpoint (method changed)
+```
+
+## Notes
+
+- The default status code is `307` (Temporary Redirect)
+- Use absolute URLs for external redirects
+- Relative URLs are resolved relative to the current request URL
+- Redirect responses should not include a response body
+- Be cautious with redirect loops (A redirects to B, B redirects to A)
+- Search engines treat 301 redirects as permanent and update their indexes
+
+## Best Practices
+
+1. **Use 301 for permanent moves**: When a resource has permanently moved
+2. **Use 307 for temporary redirects**: When you want to preserve the HTTP method
+3. **Use 303 after mutations**: Redirect GET after POST/PUT/DELETE (PRG pattern)
+4. **Use 308 for permanent API redirects**: When moving API endpoints permanently
+5. **Avoid redirect chains**: Redirect directly to the final destination
+
+## Common Patterns
+
+### Post-Redirect-Get (PRG) Pattern
+
+Prevent duplicate form submissions:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
+
+app = FastAPI()
+
+@app.post("/submit-form")
+async def submit_form():
+    # Process form
+    return RedirectResponse(
+        url="/success",
+        status_code=303  # Use 303 for PRG pattern
+    )
+```
+
+### Authentication Redirect
+
+Redirect unauthenticated users:
+
+```python
+from fastapi import FastAPI, Depends, HTTPException
+from fastapi.responses import RedirectResponse
+
+def get_current_user():
+    # Check authentication
+    return None
+
+app = FastAPI()
+
+@app.get("/protected")
+async def protected_route(user = Depends(get_current_user)):
+    if not user:
+        return RedirectResponse("/login")
+    return {"message": "Protected content"}
+```
+
+## Related
+
+- [Response](/api/responses/response) - Base response class
+- [JSONResponse](/api/responses/json-response) - For JSON responses
+- [HTTPException](https://fastapi.tiangolo.com/tutorial/handling-errors/) - For error responses

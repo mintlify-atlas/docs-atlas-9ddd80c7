@@ -1,0 +1,558 @@
+---
+title: "GraphQL Integration"
+description: "Integrate GraphQL with FastAPI using Strawberry, Graphene, or other GraphQL libraries"
+---
+
+## Overview
+
+FastAPI can be integrated with GraphQL libraries to provide a GraphQL API alongside or instead of REST endpoints. GraphQL offers a flexible query language that allows clients to request exactly the data they need.
+
+The two most popular GraphQL libraries for Python are:
+
+- **Strawberry** - Modern, type-hint based GraphQL library (recommended)
+- **Graphene** - Mature GraphQL library with extensive features
+
+<Note>
+Strawberry is recommended for FastAPI projects because it uses Python type hints similar to FastAPI, providing a consistent development experience.
+</Note>
+
+## Strawberry GraphQL
+
+### Installation
+
+```bash
+pip install strawberry-graphql[fastapi]
+```
+
+### Basic Setup
+
+Here's a complete example integrating Strawberry with FastAPI:
+
+```python
+import strawberry
+from fastapi import FastAPI
+from strawberry.fastapi import GraphQLRouter
+
+
+@strawberry.type
+class User:
+    name: str
+    age: int
+
+
+@strawberry.type
+class Query:
+    @strawberry.field
+    def user(self) -> User:
+        return User(name="Patrick", age=100)
+
+
+schema = strawberry.Schema(query=Query)
+
+graphql_app = GraphQLRouter(schema)
+
+app = FastAPI()
+app.include_router(graphql_app, prefix="/graphql")
+```
+
+Now you can access:
+- GraphQL endpoint: `http://localhost:8000/graphql`
+- GraphQL Playground: `http://localhost:8000/graphql` (in browser)
+
+### Queries with Arguments
+
+```python
+@strawberry.type
+class Query:
+    @strawberry.field
+    def user(self, user_id: int) -> User:
+        # Fetch user from database
+        return User(name=f"User {user_id}", age=25)
+    
+    @strawberry.field
+    def users(self, limit: int = 10) -> list[User]:
+        # Fetch multiple users
+        return [User(name=f"User {i}", age=20 + i) for i in range(limit)]
+```
+
+Query example:
+
+```graphql
+query {
+  user(userId: 1) {
+    name
+    age
+  }
+  
+  users(limit: 5) {
+    name
+  }
+}
+```
+
+### Mutations
+
+Add mutations for creating or updating data:
+
+```python
+@strawberry.type
+class CreateUserInput:
+    name: str
+    age: int
+    email: str
+
+
+@strawberry.type
+class Mutation:
+    @strawberry.mutation
+    def create_user(self, input: CreateUserInput) -> User:
+        # Save user to database
+        return User(name=input.name, age=input.age)
+    
+    @strawberry.mutation
+    def update_user(self, user_id: int, name: str) -> User:
+        # Update user in database
+        return User(name=name, age=25)
+
+
+schema = strawberry.Schema(query=Query, mutation=Mutation)
+```
+
+Mutation example:
+
+```graphql
+mutation {
+  createUser(input: {
+    name: "Alice",
+    age: 30,
+    email: "alice@example.com"
+  }) {
+    name
+    age
+  }
+}
+```
+
+### Async Resolvers
+
+Strawberry supports async/await for database operations:
+
+```python
+import strawberry
+from typing import Optional
+
+
+@strawberry.type
+class Query:
+    @strawberry.field
+    async def user(self, user_id: int) -> Optional[User]:
+        # Async database query
+        user_data = await database.fetch_user(user_id)
+        if user_data:
+            return User(name=user_data["name"], age=user_data["age"])
+        return None
+    
+    @strawberry.field
+    async def users(self) -> list[User]:
+        users_data = await database.fetch_all_users()
+        return [User(**user) for user in users_data]
+```
+
+<Tip>
+Use async resolvers when performing I/O operations like database queries or API calls to maintain FastAPI's async performance benefits.
+</Tip>
+
+### Relationships and Data Loaders
+
+Handle nested relationships efficiently:
+
+```python
+import strawberry
+from strawberry.dataloader import DataLoader
+from typing import List
+
+
+@strawberry.type
+class Post:
+    id: int
+    title: str
+    author_id: int
+    
+    @strawberry.field
+    async def author(self, info) -> "User":
+        # Use DataLoader to avoid N+1 queries
+        return await info.context["user_loader"].load(self.author_id)
+
+
+@strawberry.type
+class User:
+    id: int
+    name: str
+    age: int
+    
+    @strawberry.field
+    async def posts(self, info) -> List[Post]:
+        return await info.context["post_loader"].load(self.id)
+
+
+async def load_users(keys: List[int]) -> List[User]:
+    # Batch load users
+    users = await database.fetch_users_by_ids(keys)
+    return users
+
+
+async def load_posts(keys: List[int]) -> List[List[Post]]:
+    # Batch load posts for multiple users
+    posts = await database.fetch_posts_by_user_ids(keys)
+    return posts
+
+
+# Configure context with data loaders
+async def get_context():
+    return {
+        "user_loader": DataLoader(load_fn=load_users),
+        "post_loader": DataLoader(load_fn=load_posts),
+    }
+
+
+graphql_app = GraphQLRouter(schema, context_getter=get_context)
+```
+
+<Warning>
+Without DataLoaders, nested queries can cause N+1 query problems. Always use DataLoaders when resolving relationships to batch database queries efficiently.
+</Warning>
+
+### Authentication
+
+Integrate with FastAPI's dependency injection:
+
+```python
+from fastapi import Depends, HTTPException, status
+from strawberry.fastapi import GraphQLRouter
+from strawberry.types import Info
+
+
+def get_current_user(token: str = Header(...)):
+    # Verify token and return user
+    if not token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return {"id": 1, "name": "User"}
+
+
+async def get_context(
+    current_user: dict = Depends(get_current_user)
+):
+    return {"user": current_user}
+
+
+@strawberry.type
+class Query:
+    @strawberry.field
+    def me(self, info: Info) -> User:
+        current_user = info.context["user"]
+        return User(
+            id=current_user["id"],
+            name=current_user["name"],
+            age=25
+        )
+
+
+graphql_app = GraphQLRouter(
+    schema,
+    context_getter=get_context
+)
+```
+
+## Graphene Integration
+
+### Installation
+
+```bash
+pip install graphene
+pip install starlette-graphene3
+```
+
+### Basic Setup
+
+```python
+import graphene
+from starlette_graphene3 import GraphQLApp, make_graphiql_handler
+from fastapi import FastAPI
+
+
+class User(graphene.ObjectType):
+    id = graphene.Int()
+    name = graphene.String()
+    age = graphene.Int()
+
+
+class Query(graphene.ObjectType):
+    user = graphene.Field(User, user_id=graphene.Int())
+    
+    def resolve_user(self, info, user_id):
+        return User(id=user_id, name=f"User {user_id}", age=25)
+
+
+class CreateUser(graphene.Mutation):
+    class Arguments:
+        name = graphene.String(required=True)
+        age = graphene.Int(required=True)
+    
+    user = graphene.Field(User)
+    
+    def mutate(self, info, name, age):
+        user = User(id=1, name=name, age=age)
+        return CreateUser(user=user)
+
+
+class Mutation(graphene.ObjectType):
+    create_user = CreateUser.Field()
+
+
+schema = graphene.Schema(query=Query, mutation=Mutation)
+
+app = FastAPI()
+app.mount("/graphql", GraphQLApp(schema, on_get=make_graphiql_handler()))
+```
+
+## Combining REST and GraphQL
+
+You can use both REST and GraphQL in the same FastAPI application:
+
+```python
+from fastapi import FastAPI
+from strawberry.fastapi import GraphQLRouter
+import strawberry
+
+app = FastAPI()
+
+# REST endpoints
+@app.get("/api/health")
+async def health_check():
+    return {"status": "healthy"}
+
+@app.get("/api/users/{user_id}")
+async def get_user_rest(user_id: int):
+    return {"id": user_id, "name": "User"}
+
+# GraphQL endpoint
+@strawberry.type
+class Query:
+    @strawberry.field
+    def user(self, user_id: int) -> User:
+        return User(name="User", age=25)
+
+schema = strawberry.Schema(query=Query)
+graphql_app = GraphQLRouter(schema)
+
+app.include_router(graphql_app, prefix="/graphql")
+```
+
+<Info>
+This approach works well when migrating from REST to GraphQL or when different clients have different needs.
+</Info>
+
+## Subscriptions (WebSocket)
+
+Strawberry supports GraphQL subscriptions for real-time updates:
+
+```python
+import asyncio
+import strawberry
+from typing import AsyncGenerator
+
+
+@strawberry.type
+class Subscription:
+    @strawberry.subscription
+    async def count(self, target: int = 10) -> AsyncGenerator[int, None]:
+        for i in range(target):
+            yield i
+            await asyncio.sleep(1)
+    
+    @strawberry.subscription
+    async def user_updates(self, user_id: int) -> AsyncGenerator[User, None]:
+        # Subscribe to user updates from a message queue
+        async for update in message_queue.subscribe(f"user:{user_id}"):
+            yield User(**update)
+
+
+schema = strawberry.Schema(
+    query=Query,
+    mutation=Mutation,
+    subscription=Subscription
+)
+
+graphql_app = GraphQLRouter(schema)
+```
+
+Subscription example:
+
+```graphql
+subscription {
+  count(target: 5)
+}
+
+subscription {
+  userUpdates(userId: 1) {
+    name
+    age
+  }
+}
+```
+
+## Error Handling
+
+Handle errors gracefully in GraphQL:
+
+```python
+import strawberry
+from typing import Optional
+
+
+@strawberry.type
+class UserError:
+    message: str
+    code: str
+
+
+@strawberry.type
+class UserResult:
+    user: Optional[User] = None
+    error: Optional[UserError] = None
+
+
+@strawberry.type
+class Query:
+    @strawberry.field
+    async def user(self, user_id: int) -> UserResult:
+        try:
+            user_data = await database.fetch_user(user_id)
+            if not user_data:
+                return UserResult(
+                    error=UserError(
+                        message="User not found",
+                        code="USER_NOT_FOUND"
+                    )
+                )
+            return UserResult(user=User(**user_data))
+        except Exception as e:
+            return UserResult(
+                error=UserError(
+                    message="Internal server error",
+                    code="INTERNAL_ERROR"
+                )
+            )
+```
+
+## Testing GraphQL Endpoints
+
+```python
+from fastapi.testclient import TestClient
+import json
+
+def test_graphql_query():
+    client = TestClient(app)
+    
+    query = """
+        query {
+            user(userId: 1) {
+                name
+                age
+            }
+        }
+    """
+    
+    response = client.post(
+        "/graphql",
+        json={"query": query}
+    )
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert "data" in data
+    assert data["data"]["user"]["name"] == "User 1"
+
+
+def test_graphql_mutation():
+    client = TestClient(app)
+    
+    mutation = """
+        mutation {
+            createUser(input: {
+                name: "Alice",
+                age: 30,
+                email: "alice@example.com"
+            }) {
+                name
+                age
+            }
+        }
+    """
+    
+    response = client.post(
+        "/graphql",
+        json={"query": mutation}
+    )
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert data["data"]["createUser"]["name"] == "Alice"
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+
+<Card title="Use DataLoaders" icon="layer-group">
+Always use DataLoaders for relationships to avoid N+1 query problems and batch database operations.
+</Card>
+
+<Card title="Schema Design" icon="diagram-project">
+Design your schema around client needs, not database structure. Think in terms of the graph of relationships.
+</Card>
+
+<Card title="Rate Limiting" icon="gauge-high">
+Implement query complexity analysis and rate limiting to prevent abuse of expensive queries.
+</Card>
+
+<Card title="Monitoring" icon="chart-line">
+Monitor GraphQL query performance and identify slow resolvers to optimize database queries.
+</Card>
+
+</CardGroup>
+
+## Performance Optimization
+
+```python
+# Enable query depth limiting
+from strawberry.extensions import QueryDepthLimiter
+
+schema = strawberry.Schema(
+    query=Query,
+    extensions=[
+        QueryDepthLimiter(max_depth=10),
+    ]
+)
+
+# Add query caching
+from strawberry.extensions import AddValidationRules
+from graphql import ValidationRule
+
+schema = strawberry.Schema(
+    query=Query,
+    extensions=[
+        AddValidationRules([...]),
+    ]
+)
+```
+
+<Tip>
+Consider implementing persisted queries in production to reduce bandwidth and improve security by only allowing pre-approved queries.
+</Tip>
+
+## Related Topics
+
+- Learn about [WebSockets](/advanced/websockets) for real-time communication
+- Explore [Authentication](/advanced/security) for securing your GraphQL endpoints
+- Check out [Database Integration](/advanced/databases) for efficient data fetching

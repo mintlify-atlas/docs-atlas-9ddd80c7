@@ -1,0 +1,381 @@
+---
+title: Cookie Parameters
+description: Learn how to read and validate HTTP cookies in FastAPI using the Cookie() function
+---
+
+Cookies are small pieces of data stored on the client and sent with every request. FastAPI makes it easy to read and validate cookies using the `Cookie()` function.
+
+## Basic Cookie Parameter
+
+Use `Cookie()` to declare cookie parameters:
+
+```python
+from fastapi import Cookie, FastAPI
+
+app = FastAPI()
+
+@app.get("/items/")
+async def read_items(ads_id: str | None = Cookie(default=None)):
+    return {"ads_id": ads_id}
+```
+
+<Info>
+`Cookie()` works similarly to `Query()` and `Path()`, but reads values from cookies instead of the URL.
+</Info>
+
+## How It Works
+
+When a client makes a request with cookies:
+
+```bash
+GET /items/ HTTP/1.1
+Host: localhost:8000
+Cookie: ads_id=abc123; session_id=xyz789
+```
+
+FastAPI extracts the cookie value and passes it to your function.
+
+## Required Cookie Parameters
+
+Make cookies required by not providing a default:
+
+```python
+from fastapi import Cookie, FastAPI, HTTPException, status
+
+app = FastAPI()
+
+@app.get("/items/")
+async def read_items(session_id: str = Cookie()):
+    if not session_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session cookie required"
+        )
+    return {"session_id": session_id}
+```
+
+<Warning>
+Requests without the required cookie will return a 422 validation error.
+</Warning>
+
+## Optional Cookie Parameters
+
+Make cookies optional with a default value:
+
+```python
+from fastapi import Cookie, FastAPI
+
+app = FastAPI()
+
+@app.get("/items/")
+async def read_items(
+    session_id: str | None = Cookie(default=None),
+    user_id: str | None = Cookie(default=None),
+    ads_id: str | None = Cookie(default=None),
+):
+    return {
+        "session_id": session_id,
+        "user_id": user_id,
+        "ads_id": ads_id
+    }
+```
+
+## Cookie Validation
+
+`Cookie()` supports the same validation parameters as `Query()`:
+
+```python
+from fastapi import Cookie, FastAPI
+
+app = FastAPI()
+
+@app.get("/items/")
+async def read_items(
+    session_id: str = Cookie(
+        min_length=32,
+        max_length=64,
+        description="Session identifier cookie"
+    ),
+    user_id: int = Cookie(ge=1, description="User ID from cookie"),
+):
+    return {
+        "session_id": session_id,
+        "user_id": user_id
+    }
+```
+
+<Steps>
+  <Step title="String Validation">
+    Use `min_length`, `max_length`, `pattern` for string cookies
+  </Step>
+  
+  <Step title="Numeric Validation">
+    Use `gt`, `ge`, `lt`, `le` for numeric cookies
+  </Step>
+  
+  <Step title="Documentation">
+    Add `title`, `description`, `examples` for better API docs
+  </Step>
+</Steps>
+
+## Multiple Cookie Parameters
+
+Read multiple cookies in the same endpoint:
+
+```python
+from fastapi import Cookie, FastAPI
+
+app = FastAPI()
+
+@app.get("/profile/")
+async def read_profile(
+    session_id: str = Cookie(),
+    user_id: int = Cookie(),
+    preferences: str | None = Cookie(default=None),
+    theme: str = Cookie(default="light"),
+):
+    return {
+        "session_id": session_id,
+        "user_id": user_id,
+        "preferences": preferences,
+        "theme": theme
+    }
+```
+
+## Cookie Parameter with Alias
+
+Use aliases for cookies with special characters:
+
+```python
+from fastapi import Cookie, FastAPI
+
+app = FastAPI()
+
+@app.get("/items/")
+async def read_items(
+    tracking_id: str | None = Cookie(default=None, alias="tracking-id")
+):
+    return {"tracking_id": tracking_id}
+```
+
+<Note>
+Cookie names with hyphens or other special characters need aliases since they're not valid Python identifiers.
+</Note>
+
+## Type Conversion
+
+Cookies are automatically converted to the declared type:
+
+```python
+from fastapi import Cookie, FastAPI
+
+app = FastAPI()
+
+@app.get("/items/")
+async def read_items(
+    user_id: int = Cookie(),  # Converted from string to int
+    is_premium: bool = Cookie(),  # Converted from string to bool
+    cart_total: float = Cookie(),  # Converted from string to float
+):
+    return {
+        "user_id": user_id,
+        "is_premium": is_premium,
+        "cart_total": cart_total
+    }
+```
+
+## Cookie() vs Query() vs Header()
+
+<CodeGroup>
+```python Cookie() - From Cookies
+@app.get("/items/")
+async def read_items(session: str = Cookie()):
+    return {"session": session}
+# Reads from: Cookie: session=abc123
+```
+
+```python Query() - From URL
+@app.get("/items/")
+async def read_items(session: str = Query()):
+    return {"session": session}
+# Reads from: /items/?session=abc123
+```
+
+```python Header() - From Headers
+@app.get("/items/")
+async def read_items(session: str = Header()):
+    return {"session": session}
+# Reads from: Session: abc123
+```
+</CodeGroup>
+
+## Authentication with Cookies
+
+Common pattern for session-based authentication:
+
+```python
+from fastapi import Cookie, FastAPI, HTTPException, status
+
+app = FastAPI()
+
+# Fake session store
+sessions = {
+    "abc123": {"user_id": 1, "username": "alice"},
+    "xyz789": {"user_id": 2, "username": "bob"},
+}
+
+@app.get("/me")
+async def get_current_user(session_id: str = Cookie()):
+    if session_id not in sessions:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid session"
+        )
+    return sessions[session_id]
+
+@app.get("/protected")
+async def protected_route(session_id: str = Cookie()):
+    user = await get_current_user(session_id)
+    return {"message": f"Hello {user['username']}"}
+```
+
+## Secure Cookie Handling
+
+<Warning>
+Never trust cookie data blindly. Always validate and sanitize:
+</Warning>
+
+```python
+from fastapi import Cookie, FastAPI, HTTPException
+import secrets
+
+app = FastAPI()
+
+def validate_session(session_id: str) -> bool:
+    # Check format
+    if len(session_id) != 64:
+        return False
+    
+    # Check if exists in database
+    if not session_exists(session_id):
+        return False
+    
+    # Check if expired
+    if is_session_expired(session_id):
+        return False
+    
+    return True
+
+@app.get("/secure")
+async def secure_endpoint(session_id: str = Cookie()):
+    if not validate_session(session_id):
+        raise HTTPException(status_code=401, detail="Invalid session")
+    
+    return {"message": "Access granted"}
+```
+
+## Setting Cookies in Responses
+
+While `Cookie()` reads cookies, use `Response` to set them:
+
+```python
+from fastapi import FastAPI, Response
+
+app = FastAPI()
+
+@app.post("/login")
+async def login(username: str, password: str, response: Response):
+    # Validate credentials...
+    session_id = "abc123"  # Generate session
+    
+    response.set_cookie(
+        key="session_id",
+        value=session_id,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        max_age=3600,  # 1 hour
+    )
+    
+    return {"message": "Logged in successfully"}
+
+@app.post("/logout")
+async def logout(response: Response):
+    response.delete_cookie("session_id")
+    return {"message": "Logged out"}
+```
+
+<Tip>
+Always set secure cookies with:
+- `httponly=True`: Prevent JavaScript access
+- `secure=True`: Only send over HTTPS
+- `samesite="lax"` or `"strict"`: CSRF protection
+</Tip>
+
+## Cookie() Parameters
+
+All available parameters:
+
+- **Validation**: `min_length`, `max_length`, `pattern`, `gt`, `ge`, `lt`, `le`
+- **Documentation**: `title`, `description`, `examples`, `deprecated`
+- **Behavior**: `alias`, `default`, `include_in_schema`
+
+## Testing Cookie Endpoints
+
+<CodeGroup>
+```bash Using curl
+curl http://localhost:8000/items/ \
+  -H "Cookie: session_id=abc123; user_id=42"
+```
+
+```python Using TestClient
+from fastapi.testclient import TestClient
+
+def test_read_items():
+    response = client.get(
+        "/items/",
+        cookies={"session_id": "abc123", "user_id": "42"}
+    )
+    assert response.status_code == 200
+```
+
+```python Using httpx
+import httpx
+
+async with httpx.AsyncClient() as client:
+    response = await client.get(
+        "http://localhost:8000/items/",
+        cookies={"session_id": "abc123"}
+    )
+```
+</CodeGroup>
+
+## Common Use Cases
+
+<Steps>
+  <Step title="Session Management">
+    Store session IDs for authenticated users
+  </Step>
+  
+  <Step title="User Preferences">
+    Save theme, language, or other preferences
+  </Step>
+  
+  <Step title="Analytics">
+    Track user behavior with tracking cookies
+  </Step>
+  
+  <Step title="Shopping Carts">
+    Maintain cart state across requests
+  </Step>
+  
+  <Step title="A/B Testing">
+    Assign users to experiment groups
+  </Step>
+</Steps>
+
+## Related Topics
+
+- [Header Parameters](/tutorial/header-params) - Read HTTP headers
+- [Query Parameters](/tutorial/query-parameters) - Read URL parameters
+- [Request Body](/tutorial/request-body) - Handle request data

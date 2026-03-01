@@ -1,0 +1,456 @@
+---
+title: Header Parameters
+description: Learn how to read and validate HTTP headers in FastAPI using the Header() function
+---
+
+HTTP headers contain metadata about requests and responses. FastAPI makes it easy to read and validate headers using the `Header()` function.
+
+## Basic Header Parameter
+
+Use `Header()` to declare header parameters:
+
+```python
+from fastapi import FastAPI, Header
+
+app = FastAPI()
+
+@app.get("/items/")
+async def read_items(user_agent: str | None = Header(default=None)):
+    return {"User-Agent": user_agent}
+```
+
+<Info>
+`Header()` works like `Query()` and `Cookie()`, but reads values from HTTP headers.
+</Info>
+
+## Automatic Underscore to Hyphen Conversion
+
+HTTP headers use hyphens (e.g., `User-Agent`), but Python variables can't contain hyphens. FastAPI automatically converts underscores to hyphens:
+
+```python
+from fastapi import FastAPI, Header
+
+app = FastAPI()
+
+@app.get("/items/")
+async def read_items(
+    user_agent: str | None = Header(default=None),
+    content_type: str | None = Header(default=None),
+):
+    return {
+        "User-Agent": user_agent,
+        "Content-Type": content_type
+    }
+```
+
+<Note>
+`user_agent` parameter automatically matches the `User-Agent` header.
+</Note>
+
+## Disable Automatic Conversion
+
+If you need to preserve underscores, disable conversion:
+
+```python
+from fastapi import FastAPI, Header
+
+app = FastAPI()
+
+@app.get("/items/")
+async def read_items(
+    strange_header: str | None = Header(default=None, convert_underscores=False),
+):
+    return {"strange_header": strange_header}
+```
+
+Now it will only match a header literally named `strange_header`, not `Strange-Header`.
+
+## Required Header Parameters
+
+Make headers required by not providing a default:
+
+```python
+from fastapi import FastAPI, Header, HTTPException, status
+
+app = FastAPI()
+
+@app.get("/items/")
+async def read_items(authorization: str = Header()):
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authorization header"
+        )
+    return {"token": authorization}
+```
+
+<Warning>
+Requests without the required header will return a 422 validation error.
+</Warning>
+
+## Optional Header Parameters
+
+Make headers optional with a default value:
+
+```python
+from fastapi import FastAPI, Header
+
+app = FastAPI()
+
+@app.get("/items/")
+async def read_items(
+    user_agent: str | None = Header(default=None),
+    accept_language: str | None = Header(default=None),
+    x_request_id: str | None = Header(default=None),
+):
+    return {
+        "User-Agent": user_agent,
+        "Accept-Language": accept_language,
+        "X-Request-ID": x_request_id
+    }
+```
+
+## Header Validation
+
+`Header()` supports validation parameters:
+
+```python
+from fastapi import FastAPI, Header
+
+app = FastAPI()
+
+@app.get("/items/")
+async def read_items(
+    x_token: str = Header(
+        min_length=32,
+        max_length=64,
+        description="API token header"
+    ),
+    x_request_id: str = Header(
+        pattern=r"^[a-f0-9-]{36}$",
+        description="UUID request ID"
+    ),
+):
+    return {
+        "X-Token": x_token,
+        "X-Request-ID": x_request_id
+    }
+```
+
+<Steps>
+  <Step title="String Validation">
+    Use `min_length`, `max_length`, `pattern` for string headers
+  </Step>
+  
+  <Step title="Documentation">
+    Add `title`, `description`, `examples` for better API docs
+  </Step>
+  
+  <Step title="Type Conversion">
+    Declare types like `int`, `bool` for automatic conversion
+  </Step>
+</Steps>
+
+## Duplicate Headers (List Values)
+
+Some headers can appear multiple times. Receive them as a list:
+
+```python
+from fastapi import FastAPI, Header
+
+app = FastAPI()
+
+@app.get("/items/")
+async def read_items(x_token: list[str] | None = Header(default=None)):
+    return {"X-Token values": x_token}
+```
+
+For a request with:
+```
+X-Token: token1
+X-Token: token2
+X-Token: token3
+```
+
+You'll receive:
+```python
+x_token = ["token1", "token2", "token3"]
+```
+
+## Common Standard Headers
+
+### Authorization Header
+
+```python
+from fastapi import FastAPI, Header, HTTPException, status
+
+app = FastAPI()
+
+@app.get("/protected")
+async def protected_route(authorization: str = Header()):
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authorization"
+        )
+    
+    token = authorization.replace("Bearer ", "")
+    # Validate token...
+    return {"message": "Access granted"}
+```
+
+### Content-Type Header
+
+```python
+from fastapi import FastAPI, Header
+
+app = FastAPI()
+
+@app.post("/data")
+async def receive_data(
+    data: bytes,
+    content_type: str = Header(),
+):
+    if content_type != "application/octet-stream":
+        raise HTTPException(
+            status_code=415,
+            detail="Unsupported media type"
+        )
+    return {"received": len(data)}
+```
+
+### Accept Header
+
+```python
+from fastapi import FastAPI, Header
+from fastapi.responses import JSONResponse, PlainTextResponse
+
+app = FastAPI()
+
+@app.get("/items/{item_id}")
+async def read_item(
+    item_id: int,
+    accept: str = Header(default="application/json"),
+):
+    item = {"item_id": item_id, "name": "Foo"}
+    
+    if "text/plain" in accept:
+        return PlainTextResponse(f"Item {item_id}: {item['name']}")
+    
+    return JSONResponse(item)
+```
+
+### User-Agent Header
+
+```python
+from fastapi import FastAPI, Header
+
+app = FastAPI()
+
+@app.get("/")
+async def root(user_agent: str | None = Header(default=None)):
+    is_mobile = user_agent and "Mobile" in user_agent
+    return {
+        "user_agent": user_agent,
+        "is_mobile": is_mobile
+    }
+```
+
+## Custom Headers
+
+Read custom application headers (usually prefixed with `X-`):
+
+```python
+from fastapi import FastAPI, Header
+
+app = FastAPI()
+
+@app.get("/items/")
+async def read_items(
+    x_api_key: str = Header(),
+    x_request_id: str | None = Header(default=None),
+    x_correlation_id: str | None = Header(default=None),
+):
+    return {
+        "api_key": x_api_key,
+        "request_id": x_request_id,
+        "correlation_id": x_correlation_id
+    }
+```
+
+<Tip>
+Custom headers conventionally use the `X-` prefix, though this is no longer required by RFC 6648.
+</Tip>
+
+## Header Aliases
+
+Use aliases for headers with special naming:
+
+```python
+from fastapi import FastAPI, Header
+
+app = FastAPI()
+
+@app.get("/items/")
+async def read_items(
+    api_key: str = Header(alias="X-API-Key"),
+    request_id: str | None = Header(default=None, alias="X-Request-ID"),
+):
+    return {
+        "api_key": api_key,
+        "request_id": request_id
+    }
+```
+
+## Case Sensitivity
+
+HTTP header names are case-insensitive. FastAPI handles this automatically:
+
+```python
+@app.get("/items/")
+async def read_items(user_agent: str | None = Header(default=None)):
+    return {"User-Agent": user_agent}
+```
+
+All of these match:
+- `User-Agent: Mozilla/5.0`
+- `user-agent: Mozilla/5.0`
+- `USER-AGENT: Mozilla/5.0`
+
+## Header() vs Cookie() vs Query()
+
+<CodeGroup>
+```python Header() - From HTTP Headers
+@app.get("/items/")
+async def read_items(x_token: str = Header()):
+    return {"token": x_token}
+# Reads from: X-Token: abc123
+```
+
+```python Cookie() - From Cookies
+@app.get("/items/")
+async def read_items(token: str = Cookie()):
+    return {"token": token}
+# Reads from: Cookie: token=abc123
+```
+
+```python Query() - From URL
+@app.get("/items/")
+async def read_items(token: str = Query()):
+    return {"token": token}
+# Reads from: /items/?token=abc123
+```
+</CodeGroup>
+
+## Authentication Example
+
+Common pattern for API key authentication:
+
+```python
+from fastapi import FastAPI, Header, HTTPException, status
+
+app = FastAPI()
+
+API_KEYS = {"secret-key-123", "another-key-456"}
+
+@app.get("/secure")
+async def secure_endpoint(x_api_key: str = Header()):
+    if x_api_key not in API_KEYS:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid API Key"
+        )
+    return {"message": "Access granted"}
+
+@app.get("/public")
+async def public_endpoint():
+    return {"message": "No authentication required"}
+```
+
+## Setting Response Headers
+
+While `Header()` reads headers, use `Response` to set them:
+
+```python
+from fastapi import FastAPI, Response
+
+app = FastAPI()
+
+@app.get("/items/{item_id}")
+async def read_item(item_id: int, response: Response):
+    response.headers["X-Item-ID"] = str(item_id)
+    response.headers["X-Process-Time"] = "0.123"
+    return {"item_id": item_id}
+```
+
+## Header() Parameters
+
+All available parameters:
+
+- **Validation**: `min_length`, `max_length`, `pattern`
+- **Documentation**: `title`, `description`, `examples`, `deprecated`
+- **Behavior**: `alias`, `default`, `convert_underscores`, `include_in_schema`
+
+## Testing Header Endpoints
+
+<CodeGroup>
+```bash Using curl
+curl http://localhost:8000/items/ \
+  -H "X-Token: secret123" \
+  -H "X-Request-ID: 550e8400-e29b-41d4-a716-446655440000"
+```
+
+```python Using TestClient
+from fastapi.testclient import TestClient
+
+def test_read_items():
+    response = client.get(
+        "/items/",
+        headers={
+            "X-Token": "secret123",
+            "X-Request-ID": "550e8400-e29b-41d4-a716-446655440000"
+        }
+    )
+    assert response.status_code == 200
+```
+
+```python Using httpx
+import httpx
+
+async with httpx.AsyncClient() as client:
+    response = await client.get(
+        "http://localhost:8000/items/",
+        headers={"X-Token": "secret123"}
+    )
+```
+</CodeGroup>
+
+## Common Use Cases
+
+<Steps>
+  <Step title="Authentication">
+    API keys, bearer tokens, basic auth
+  </Step>
+  
+  <Step title="Request Tracing">
+    Request IDs, correlation IDs for logging
+  </Step>
+  
+  <Step title="Content Negotiation">
+    Accept, Content-Type headers
+  </Step>
+  
+  <Step title="Client Information">
+    User-Agent, Accept-Language for analytics
+  </Step>
+  
+  <Step title="API Versioning">
+    Custom version headers for API versioning
+  </Step>
+</Steps>
+
+## Related Topics
+
+- [Cookie Parameters](/tutorial/cookie-params) - Read HTTP cookies
+- [Query Parameters](/tutorial/query-parameters) - Read URL parameters
+- [Request Body](/tutorial/request-body) - Handle request data

@@ -1,0 +1,317 @@
+---
+title: Request Body
+description: Learn how to handle JSON request bodies in FastAPI using Pydantic models for validation and serialization
+---
+
+When you need to send data from a client to your API, you send it as a request body. FastAPI uses Pydantic models to declare, validate, and document request bodies.
+
+## Pydantic Models
+
+Create a Pydantic model to define the structure of your request body:
+
+```python
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+class Item(BaseModel):
+    name: str
+    description: str | None = None
+    price: float
+    tax: float | None = None
+
+app = FastAPI()
+
+@app.post("/items/")
+async def create_item(item: Item):
+    return item
+```
+
+This endpoint:
+- Accepts POST requests to `/items/`
+- Expects a JSON body matching the `Item` model
+- Automatically validates the data
+- Provides interactive API docs
+
+<Info>
+Pydantic handles all the JSON parsing, validation, and serialization automatically.
+</Info>
+
+## Request Body Example
+
+Send this JSON to the endpoint:
+
+```json
+{
+  "name": "Foo",
+  "description": "A very nice Item",
+  "price": 35.4,
+  "tax": 3.2
+}
+```
+
+<CodeGroup>
+```python Valid Request
+item = {
+    "name": "Foo",
+    "description": "A very nice Item",
+    "price": 35.4,
+    "tax": 3.2
+}
+# ✓ Valid - all required fields present
+```
+
+```python Also Valid (Optional Fields)
+item = {
+    "name": "Foo",
+    "price": 35.4
+}
+# ✓ Valid - description and tax are optional
+```
+
+```python Invalid Request
+item = {
+    "name": "Foo"
+    # ✗ Invalid - missing required field 'price'
+}
+```
+</CodeGroup>
+
+## Using the Model in Your Function
+
+You can access all model attributes directly:
+
+```python
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+class Item(BaseModel):
+    name: str
+    description: str | None = None
+    price: float
+    tax: float | None = None
+
+app = FastAPI()
+
+@app.post("/items/")
+async def create_item(item: Item):
+    item_dict = item.model_dump()
+    if item.tax:
+        price_with_tax = item.price + item.tax
+        item_dict.update({"price_with_tax": price_with_tax})
+    return item_dict
+```
+
+<Steps>
+  <Step title="Model Attributes">
+    Access attributes directly: `item.name`, `item.price`
+  </Step>
+  
+  <Step title="Convert to Dict">
+    Use `item.model_dump()` to get a dictionary
+  </Step>
+  
+  <Step title="Validation">
+    All validation happens automatically before your function runs
+  </Step>
+</Steps>
+
+## Request Body + Path Parameters
+
+You can declare both path parameters and a request body:
+
+```python
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+class Item(BaseModel):
+    name: str
+    description: str | None = None
+    price: float
+    tax: float | None = None
+
+app = FastAPI()
+
+@app.put("/items/{item_id}")
+async def update_item(item_id: int, item: Item):
+    return {"item_id": item_id, **item.model_dump()}
+```
+
+FastAPI will:
+- Extract `item_id` from the path
+- Parse the JSON body as an `Item`
+
+## Request Body + Path + Query Parameters
+
+You can mix all three parameter types:
+
+```python
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+class Item(BaseModel):
+    name: str
+    description: str | None = None
+    price: float
+    tax: float | None = None
+
+app = FastAPI()
+
+@app.put("/items/{item_id}")
+async def update_item(
+    item_id: int,
+    item: Item,
+    q: str | None = None
+):
+    result = {"item_id": item_id, **item.model_dump()}
+    if q:
+        result.update({"q": q})
+    return result
+```
+
+<Note>
+FastAPI automatically recognizes:
+- **Path parameters**: If declared in the path
+- **Query parameters**: If they're singular types (int, str, etc.)
+- **Request body**: If declared with a Pydantic model
+</Note>
+
+## Multiple Body Parameters
+
+You can declare multiple body parameters:
+
+```python
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class Item(BaseModel):
+    name: str
+    description: str | None = None
+    price: float
+    tax: float | None = None
+
+class User(BaseModel):
+    username: str
+    full_name: str | None = None
+
+@app.put("/items/{item_id}")
+async def update_item(item_id: int, item: Item, user: User):
+    results = {"item_id": item_id, "item": item, "user": user}
+    return results
+```
+
+Expected JSON body:
+```json
+{
+  "item": {
+    "name": "Foo",
+    "price": 35.4
+  },
+  "user": {
+    "username": "dave",
+    "full_name": "Dave Grohl"
+  }
+}
+```
+
+## Using Body() for Additional Validation
+
+Import and use `Body()` for additional validation and metadata:
+
+```python
+from fastapi import Body, FastAPI
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class Item(BaseModel):
+    name: str
+    description: str | None = None
+    price: float
+    tax: float | None = None
+
+@app.put("/items/{item_id}")
+async def update_item(
+    item_id: int,
+    item: Item = Body(embed=True)
+):
+    results = {"item_id": item_id, "item": item}
+    return results
+```
+
+<Tip>
+The `embed=True` parameter tells FastAPI to expect the body nested under a key matching the parameter name.
+</Tip>
+
+## Field Validation
+
+Use Pydantic's `Field()` for field-level validation:
+
+```python
+from fastapi import FastAPI
+from pydantic import BaseModel, Field
+
+app = FastAPI()
+
+class Item(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    description: str | None = Field(default=None, max_length=500)
+    price: float = Field(gt=0, description="The price must be greater than zero")
+    tax: float | None = None
+
+@app.post("/items/")
+async def create_item(item: Item):
+    return item
+```
+
+### Available Field() Parameters
+
+- **Numeric**: `gt`, `ge`, `lt`, `le`, `multiple_of`
+- **String**: `min_length`, `max_length`, `pattern`
+- **General**: `default`, `description`, `examples`, `deprecated`
+
+## Nested Models
+
+Pydantic models can contain other models:
+
+```python
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class Image(BaseModel):
+    url: str
+    name: str
+
+class Item(BaseModel):
+    name: str
+    description: str | None = None
+    price: float
+    tax: float | None = None
+    images: list[Image] | None = None
+
+@app.post("/items/")
+async def create_item(item: Item):
+    return item
+```
+
+<Warning>
+FastAPI will validate the entire nested structure, including lists and deeply nested models.
+</Warning>
+
+## Key Benefits
+
+- **Automatic Validation**: Invalid data returns 422 with details
+- **Automatic Documentation**: Models appear in OpenAPI/Swagger UI
+- **Type Safety**: Full editor support with autocomplete
+- **Serialization**: Automatic JSON parsing and encoding
+- **Data Conversion**: Automatic type conversion where possible
+
+## Related Topics
+
+- [Request Forms](/tutorial/request-forms) - Handle form data instead of JSON
+- [Request Files](/tutorial/request-files) - Handle file uploads
+- [Response Model](/tutorial/response-model) - Define response schemas
+- [Extra Models](/tutorial/extra-models) - Work with multiple related models

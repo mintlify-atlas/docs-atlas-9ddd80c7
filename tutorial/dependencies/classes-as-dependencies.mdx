@@ -1,0 +1,297 @@
+---
+title: 'Classes as Dependencies'
+description: 'Learn how to use Python classes as dependencies in FastAPI for stateful logic and reusable components'
+---
+
+# Classes as Dependencies
+
+While functions are great for simple dependencies, sometimes you need more structure. FastAPI allows you to use **classes as dependencies**, giving you powerful ways to organize complex logic and maintain state.
+
+## Why Use Classes?
+
+Classes as dependencies are useful when you need:
+
+- **State management**: Store configuration or computed values
+- **Complex initialization**: Set up connections or load data
+- **Reusability**: Create instances with different configurations
+- **Organization**: Group related parameters and methods together
+
+## Basic Class Dependency
+
+Here's a simple example from the FastAPI source code:
+
+```python
+from fastapi import Depends, FastAPI
+
+app = FastAPI()
+
+fake_items_db = [{"item_name": "Foo"}, {"item_name": "Bar"}, {"item_name": "Baz"}]
+
+
+class CommonQueryParams:
+    def __init__(self, q: str | None = None, skip: int = 0, limit: int = 100):
+        self.q = q
+        self.skip = skip
+        self.limit = limit
+
+
+@app.get("/items/")
+async def read_items(commons: CommonQueryParams = Depends(CommonQueryParams)):
+    response = {}
+    if commons.q:
+        response.update({"q": commons.q})
+    items = fake_items_db[commons.skip : commons.skip + commons.limit]
+    response.update({"items": items})
+    return response
+```
+
+### How It Works
+
+<Steps>
+
+<Step title="FastAPI inspects the class">
+When you pass a class to `Depends()`, FastAPI looks at the `__init__` method to determine what parameters are needed.
+</Step>
+
+<Step title="Parameters are extracted from the request">
+FastAPI extracts values from the request (query params, headers, etc.) based on the `__init__` parameters.
+</Step>
+
+<Step title="An instance is created">
+FastAPI calls the class constructor with the extracted values, creating an instance.
+</Step>
+
+<Step title="The instance is passed to your path operation">
+Your path operation function receives the instance, which you can use to access the parameters and any methods.
+</Step>
+
+</Steps>
+
+## Shorthand Syntax
+
+You can use a convenient shorthand when the parameter type matches the dependency:
+
+```python
+# Instead of this:
+@app.get("/items/")
+async def read_items(commons: CommonQueryParams = Depends(CommonQueryParams)):
+    return commons
+
+# You can write this:
+@app.get("/items/")
+async def read_items(commons: CommonQueryParams = Depends()):
+    return commons
+
+# Or even this:
+@app.get("/items/")
+async def read_items(commons = Depends(CommonQueryParams)):
+    return commons
+```
+
+<Info>
+FastAPI will look at the type annotation to determine which class to use. This works because `Depends()` is smart enough to use the type hint when no explicit dependency is provided.
+</Info>
+
+## Callable Classes with `__call__`
+
+You can create dependencies that are callable instances by implementing the `__call__` method. This is perfect for creating configurable dependencies:
+
+```python
+from fastapi import Depends, FastAPI
+
+app = FastAPI()
+
+
+class FixedContentQueryChecker:
+    def __init__(self, fixed_content: str):
+        self.fixed_content = fixed_content
+
+    def __call__(self, q: str = ""):
+        if q:
+            return self.fixed_content in q
+        return False
+
+
+checker = FixedContentQueryChecker("bar")
+
+
+@app.get("/query-checker/")
+async def read_query_check(fixed_content_included: bool = Depends(checker)):
+    return {"fixed_content_in_query": fixed_content_included}
+```
+
+### Understanding the Pattern
+
+1. **Initialization**: `FixedContentQueryChecker("bar")` creates an instance with `fixed_content="bar"`
+2. **Usage**: When used with `Depends(checker)`, FastAPI calls `checker(q=...)` (the `__call__` method)
+3. **Parameters**: The `__call__` method can have its own parameters that FastAPI will resolve from the request
+
+<Note>
+The `__call__` method is what gets executed on each request, while `__init__` is called once when you create the instance. This lets you configure the behavior at initialization time.
+</Note>
+
+## Stateful Dependencies
+
+Classes can maintain state between initialization and usage:
+
+```python
+class DatabaseConnection:
+    def __init__(self, db_url: str = "postgresql://localhost/mydb"):
+        self.db_url = db_url
+        self.connection_count = 0
+    
+    def __call__(self):
+        self.connection_count += 1
+        return {
+            "db_url": self.db_url,
+            "connections": self.connection_count
+        }
+
+
+db = DatabaseConnection()
+
+@app.get("/db-info/")
+def get_db_info(info = Depends(db)):
+    return info
+```
+
+<Warning>
+Be careful with mutable state in callable dependencies. The same instance is reused across requests, so state persists. Use request-scoped dependencies (with `scope="request"`) if you need isolation between requests.
+</Warning>
+
+## Classes with Methods
+
+You can add methods to your dependency classes for complex logic:
+
+```python
+class PaginationParams:
+    def __init__(self, page: int = 1, size: int = 50):
+        self.page = page
+        self.size = size
+    
+    def get_skip(self) -> int:
+        return (self.page - 1) * self.size
+    
+    def get_limit(self) -> int:
+        return self.size
+    
+    def to_dict(self) -> dict:
+        return {
+            "page": self.page,
+            "size": self.size,
+            "skip": self.get_skip(),
+            "limit": self.get_limit()
+        }
+
+
+@app.get("/items/")
+async def read_items(pagination: PaginationParams = Depends()):
+    return {
+        "pagination": pagination.to_dict(),
+        "items": get_items(pagination.get_skip(), pagination.get_limit())
+    }
+```
+
+## Real-World Example: Authentication
+
+Here's a practical example combining class dependencies with authentication:
+
+```python
+from fastapi import Depends, FastAPI, HTTPException, Header
+
+app = FastAPI()
+
+
+class AuthHandler:
+    def __init__(self, required_role: str):
+        self.required_role = required_role
+    
+    def __call__(self, authorization: str = Header()):
+        token = authorization.replace("Bearer ", "")
+        user = self.verify_token(token)
+        
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        
+        if user.role != self.required_role:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Required role: {self.required_role}"
+            )
+        
+        return user
+    
+    def verify_token(self, token: str):
+        # Token verification logic here
+        return {"username": "john", "role": "admin"}
+
+
+# Create different auth handlers for different roles
+require_admin = AuthHandler("admin")
+require_user = AuthHandler("user")
+
+
+@app.get("/admin/")
+async def admin_only(user = Depends(require_admin)):
+    return {"message": f"Hello admin {user['username']}"}
+
+
+@app.get("/dashboard/")
+async def user_dashboard(user = Depends(require_user)):
+    return {"message": f"Hello {user['username']}"}
+```
+
+## How FastAPI Detects Callables
+
+FastAPI's detection logic (from `fastapi/dependencies/models.py:106`) determines if a dependency is callable:
+
+```python
+def is_gen_callable(self) -> bool:
+    if inspect.isgeneratorfunction(self.call):
+        return True
+    if inspect.isclass(self.call):
+        return False
+    dunder_call = getattr(self.call, "__call__", None)
+    if dunder_call is None:
+        return False
+    if inspect.isgeneratorfunction(dunder_call):
+        return True
+    return False
+```
+
+This means FastAPI can handle:
+- Regular functions
+- Async functions
+- Classes (calls `__init__`)
+- Callable instances (calls `__call__`)
+- Generator functions (for context managers)
+
+## Best Practices
+
+<Steps>
+
+<Step title="Use classes for complex dependencies">
+If your dependency has more than 3-4 parameters or needs helper methods, consider using a class.
+</Step>
+
+<Step title="Use callable instances for configuration">
+When you need multiple variations of the same dependency with different settings, create callable instances.
+</Step>
+
+<Step title="Keep state management in mind">
+Remember that callable instances persist across requests. Use appropriate scoping or request-specific dependencies when needed.
+</Step>
+
+<Step title="Add type hints for better editor support">
+Always type hint your class attributes and method returns for better IDE autocompletion.
+</Step>
+
+</Steps>
+
+## Next Steps
+
+Now that you know how to use classes as dependencies, learn about:
+
+- Creating sub-dependencies (dependencies that use other dependencies)
+- Using dependencies at the path operation decorator level
+- Setting up global application dependencies

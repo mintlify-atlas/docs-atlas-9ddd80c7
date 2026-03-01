@@ -1,0 +1,113 @@
+---
+title: UploadFile
+description: A file uploaded in a request with async-compatible methods for reading and writing.
+---
+
+## UploadFile
+
+A file uploaded in a request. Define it as a path operation function parameter or dependency to receive uploaded files.
+
+For regular `def` functions, you can use the `upload_file.file` attribute to access the raw standard Python file (blocking, not async).
+
+```python
+from typing import Annotated
+from fastapi import FastAPI, File, UploadFile
+
+app = FastAPI()
+
+@app.post("/files/")
+async def create_file(file: Annotated[bytes, File()]):
+    return {"file_size": len(file)}
+
+@app.post("/uploadfile/")
+async def create_upload_file(file: UploadFile):
+    return {"filename": file.filename}
+```
+
+## Attributes
+
+<ParamField path="file" type="BinaryIO">
+  The standard Python file object (non-async). Useful for non-async code.
+</ParamField>
+
+<ParamField path="filename" type="str | None">
+  The original file name sent by the client.
+</ParamField>
+
+<ParamField path="size" type="int | None">
+  The size of the file in bytes.
+</ParamField>
+
+<ParamField path="headers" type="Headers">
+  The headers of the request.
+</ParamField>
+
+<ParamField path="content_type" type="str | None">
+  The content type of the file from the request headers (e.g., "image/png", "application/pdf").
+</ParamField>
+
+## Methods
+
+### read
+
+Read bytes from the file asynchronously.
+
+```python
+async def read(size: int = -1) -> bytes
+```
+
+<ParamField path="size" type="int" default="-1">
+  The number of bytes to read from the file. Default is -1, which reads the entire file.
+</ParamField>
+
+**Returns:** The bytes read from the file.
+
+### write
+
+Write bytes to the file asynchronously.
+
+```python
+async def write(data: bytes) -> None
+```
+
+<ParamField path="data" type="bytes" required>
+  The bytes to write to the file.
+</ParamField>
+
+Note: You normally wouldn't use this method for files received in a request.
+
+### seek
+
+Move to a specific position in the file.
+
+```python
+async def seek(offset: int) -> None
+```
+
+<ParamField path="offset" type="int" required>
+  The position in bytes to seek to in the file.
+</ParamField>
+
+Any subsequent read or write will start from this position.
+
+### close
+
+Close the file.
+
+```python
+async def close() -> None
+```
+
+Always close files when you're done to free up system resources.
+
+## Usage Notes
+
+- All methods are async-compatible and run in a threadpool
+- The file is automatically stored in memory up to a size limit, then spooled to disk
+- For small files, content is kept in memory for better performance
+- Use `await file.read()` to read the entire file contents
+- Remember to `await file.close()` or use context managers when appropriate
+
+## Learn More
+
+Read more in the [FastAPI docs for Request Files](https://fastapi.tiangolo.com/tutorial/request-files/).

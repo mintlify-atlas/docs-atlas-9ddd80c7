@@ -1,0 +1,324 @@
+---
+title: 'SQL Databases'
+description: 'Integrate SQL databases with FastAPI using SQLModel and dependency injection'
+---
+
+FastAPI works seamlessly with SQL databases through SQLModel, a library that combines SQLAlchemy and Pydantic for a powerful database integration.
+
+<Note>
+This guide uses **SQLModel**, which is built on top of SQLAlchemy and designed specifically for FastAPI. You can also use SQLAlchemy directly if needed.
+</Note>
+
+## Install Dependencies
+
+First, install SQLModel which includes SQLAlchemy:
+
+```bash
+pip install sqlmodel
+```
+
+## Database Setup
+
+<Steps>
+  <Step title="Create the Database Engine">
+    Set up the database connection and engine. For this example, we'll use SQLite:
+
+    ```python
+    from sqlmodel import create_engine
+
+    sqlite_file_name = "database.db"
+    sqlite_url = f"sqlite:///{sqlite_file_name}"
+
+    connect_args = {"check_same_thread": False}
+    engine = create_engine(sqlite_url, connect_args=connect_args)
+    ```
+
+    <Info>
+    The `check_same_thread: False` argument is needed only for SQLite. It allows multiple threads to access the same connection.
+    </Info>
+  </Step>
+
+  <Step title="Define Your Models">
+    Create SQLModel classes that represent your database tables:
+
+    ```python
+    from sqlmodel import SQLModel, Field
+
+    class Hero(SQLModel, table=True):
+        id: int | None = Field(default=None, primary_key=True)
+        name: str = Field(index=True)
+        age: int | None = Field(default=None, index=True)
+        secret_name: str
+    ```
+
+    Setting `table=True` tells SQLModel this is a database table model, not just a Pydantic model.
+  </Step>
+
+  <Step title="Create Database Tables">
+    Use a startup event to create all tables:
+
+    ```python
+    def create_db_and_tables():
+        SQLModel.metadata.create_all(engine)
+
+    @app.on_event("startup")
+    def on_startup():
+        create_db_and_tables()
+    ```
+  </Step>
+</Steps>
+
+## Session Dependency Injection
+
+The key to working with databases in FastAPI is using **dependency injection** for database sessions.
+
+### Create a Session Dependency
+
+```python
+from sqlmodel import Session
+from fastapi import Depends
+
+def get_session():
+    with Session(engine) as session:
+        yield session
+```
+
+This dependency:
+- Creates a new session for each request
+- Automatically closes the session when the request completes
+- Handles cleanup even if an exception occurs
+
+### Use Annotated for Cleaner Code
+
+```python
+from typing import Annotated
+
+SessionDep = Annotated[Session, Depends(get_session)]
+```
+
+Now you can use `SessionDep` instead of `Session = Depends(get_session)` in every endpoint.
+
+<Warning>
+Never create a global session. Always use dependency injection to ensure each request gets its own session.
+</Warning>
+
+## CRUD Operations
+
+### Create - Add New Records
+
+```python
+@app.post("/heroes/")
+def create_hero(hero: Hero, session: SessionDep) -> Hero:
+    session.add(hero)
+    session.commit()
+    session.refresh(hero)
+    return hero
+```
+
+The process:
+1. `session.add()` - Adds the object to the session
+2. `session.commit()` - Commits the transaction to the database
+3. `session.refresh()` - Refreshes the object to get auto-generated values (like ID)
+
+### Read - Query Records
+
+```python
+from sqlmodel import select
+from fastapi import Query
+
+@app.get("/heroes/")
+def read_heroes(
+    session: SessionDep,
+    offset: int = 0,
+    limit: Annotated[int, Query(le=100)] = 100,
+) -> list[Hero]:
+    heroes = session.exec(select(Hero).offset(offset).limit(limit)).all()
+    return heroes
+```
+
+Query a single record:
+
+```python
+from fastapi import HTTPException
+
+@app.get("/heroes/{hero_id}")
+def read_hero(hero_id: int, session: SessionDep) -> Hero:
+    hero = session.get(Hero, hero_id)
+    if not hero:
+        raise HTTPException(status_code=404, detail="Hero not found")
+    return hero
+```
+
+<Info>
+`session.get()` is a convenient method to fetch by primary key. Use `select()` for more complex queries.
+</Info>
+
+### Update - Modify Records
+
+```python
+@app.patch("/heroes/{hero_id}")
+def update_hero(hero_id: int, hero: HeroUpdate, session: SessionDep):
+    hero_db = session.get(Hero, hero_id)
+    if not hero_db:
+        raise HTTPException(status_code=404, detail="Hero not found")
+    
+    hero_data = hero.model_dump(exclude_unset=True)
+    hero_db.sqlmodel_update(hero_data)
+    
+    session.add(hero_db)
+    session.commit()
+    session.refresh(hero_db)
+    return hero_db
+```
+
+Key points:
+- `exclude_unset=True` only includes fields that were actually provided
+- `sqlmodel_update()` updates the model with the new data
+
+### Delete - Remove Records
+
+```python
+@app.delete("/heroes/{hero_id}")
+def delete_hero(hero_id: int, session: SessionDep):
+    hero = session.get(Hero, hero_id)
+    if not hero:
+        raise HTTPException(status_code=404, detail="Hero not found")
+    
+    session.delete(hero)
+    session.commit()
+    return {"ok": True}
+```
+
+## Multiple Models for Input/Output
+
+For better security and API design, create separate models:
+
+```python
+class HeroBase(SQLModel):
+    name: str = Field(index=True)
+    age: int | None = Field(default=None, index=True)
+
+class Hero(HeroBase, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    secret_name: str  # This won't be exposed in HeroPublic
+
+class HeroPublic(HeroBase):
+    id: int
+
+class HeroCreate(HeroBase):
+    secret_name: str
+
+class HeroUpdate(HeroBase):
+    name: str | None = None
+    age: int | None = None
+    secret_name: str | None = None
+```
+
+Then use `response_model` to control what gets returned:
+
+```python
+@app.post("/heroes/", response_model=HeroPublic)
+def create_hero(hero: HeroCreate, session: SessionDep):
+    db_hero = Hero.model_validate(hero)
+    session.add(db_hero)
+    session.commit()
+    session.refresh(db_hero)
+    return db_hero
+```
+
+## Complete Example
+
+```python
+from typing import Annotated
+from fastapi import Depends, FastAPI, HTTPException, Query
+from sqlmodel import Field, Session, SQLModel, create_engine, select
+
+class Hero(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    name: str = Field(index=True)
+    age: int | None = Field(default=None, index=True)
+    secret_name: str
+
+sqlite_file_name = "database.db"
+sqlite_url = f"sqlite:///{sqlite_file_name}"
+connect_args = {"check_same_thread": False}
+engine = create_engine(sqlite_url, connect_args=connect_args)
+
+def create_db_and_tables():
+    SQLModel.metadata.create_all(engine)
+
+def get_session():
+    with Session(engine) as session:
+        yield session
+
+SessionDep = Annotated[Session, Depends(get_session)]
+app = FastAPI()
+
+@app.on_event("startup")
+def on_startup():
+    create_db_and_tables()
+
+@app.post("/heroes/")
+def create_hero(hero: Hero, session: SessionDep) -> Hero:
+    session.add(hero)
+    session.commit()
+    session.refresh(hero)
+    return hero
+
+@app.get("/heroes/")
+def read_heroes(
+    session: SessionDep,
+    offset: int = 0,
+    limit: Annotated[int, Query(le=100)] = 100,
+) -> list[Hero]:
+    heroes = session.exec(select(Hero).offset(offset).limit(limit)).all()
+    return heroes
+
+@app.get("/heroes/{hero_id}")
+def read_hero(hero_id: int, session: SessionDep) -> Hero:
+    hero = session.get(Hero, hero_id)
+    if not hero:
+        raise HTTPException(status_code=404, detail="Hero not found")
+    return hero
+
+@app.delete("/heroes/{hero_id}")
+def delete_hero(hero_id: int, session: SessionDep):
+    hero = session.get(Hero, hero_id)
+    if not hero:
+        raise HTTPException(status_code=404, detail="Hero not found")
+    session.delete(hero)
+    session.commit()
+    return {"ok": True}
+```
+
+## Database URLs
+
+For different databases, use the appropriate connection string:
+
+```python
+# PostgreSQL
+DATABASE_URL = "postgresql://user:password@localhost/dbname"
+
+# MySQL
+DATABASE_URL = "mysql://user:password@localhost/dbname"
+
+# SQLite
+DATABASE_URL = "sqlite:///./database.db"
+```
+
+<Warning>
+Never hardcode credentials in your code. Use environment variables:
+
+```python
+import os
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+engine = create_engine(DATABASE_URL)
+```
+</Warning>
+
+## Next Steps
+
+- Learn about [async SQL databases](/tutorial/async-sql-databases) for better performance
+- Explore advanced SQLModel features like relationships and joins
+- Implement connection pooling for production deployments

@@ -1,0 +1,276 @@
+---
+title: FileResponse
+description: Response class optimized for serving static files with proper headers and caching
+---
+
+`FileResponse` is an optimized response class for serving files. It automatically handles content type detection, content length, caching headers, and range requests.
+
+## Import
+
+```python
+from fastapi.responses import FileResponse
+```
+
+## Class Signature
+
+```python
+class FileResponse(Response):
+    chunk_size = 64 * 1024  # 64KB
+```
+
+## Constructor Parameters
+
+<ParamField path="path" type="str | PathLike" required>
+  The file path to serve. Can be absolute or relative.
+</ParamField>
+
+<ParamField path="status_code" type="int" default="200">
+  The HTTP status code for the response.
+</ParamField>
+
+<ParamField path="headers" type="dict | None" default="None">
+  Additional HTTP headers to include in the response.
+</ParamField>
+
+<ParamField path="media_type" type="str | None" default="None">
+  The media type for the file. If not provided, it's automatically detected from the file extension.
+</ParamField>
+
+<ParamField path="background" type="BackgroundTask | None" default="None">
+  Background task to run after the file is sent.
+</ParamField>
+
+<ParamField path="filename" type="str | None" default="None">
+  The filename to use in the `Content-Disposition` header for downloads.
+</ParamField>
+
+<ParamField path="stat_result" type="os.stat_result | None" default="None">
+  Pre-computed file stats to avoid redundant filesystem calls.
+</ParamField>
+
+<ParamField path="method" type="str | None" default="None">
+  The HTTP method (usually set automatically by FastAPI).
+</ParamField>
+
+<ParamField path="content_disposition_type" type="str" default="attachment">
+  The Content-Disposition type: `attachment` (download) or `inline` (display in browser).
+</ParamField>
+
+## Usage
+
+### Basic File Response
+
+Serve a file directly:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import FileResponse
+
+app = FastAPI()
+
+@app.get("/")
+async def download_file():
+    return FileResponse("large-video-file.mp4")
+```
+
+### Using response_class
+
+Return just the file path when using `response_class`:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import FileResponse
+
+app = FastAPI()
+
+@app.get("/video", response_class=FileResponse)
+async def get_video():
+    return "large-video-file.mp4"
+```
+
+### Force Download with Custom Filename
+
+Set a download filename using the `filename` parameter:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import FileResponse
+
+app = FastAPI()
+
+@app.get("/download")
+async def download_file():
+    return FileResponse(
+        path="document.pdf",
+        filename="my-document.pdf",
+        media_type="application/pdf"
+    )
+```
+
+### Display in Browser (Inline)
+
+Use `inline` content disposition to display files in the browser:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import FileResponse
+
+app = FastAPI()
+
+@app.get("/image")
+async def get_image():
+    return FileResponse(
+        path="image.jpg",
+        media_type="image/jpeg",
+        content_disposition_type="inline"
+    )
+```
+
+### Custom Headers
+
+Add custom headers to the file response:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import FileResponse
+
+app = FastAPI()
+
+@app.get("/report")
+async def download_report():
+    return FileResponse(
+        path="report.xlsx",
+        filename="monthly-report.xlsx",
+        headers={"X-Custom-Header": "value"}
+    )
+```
+
+### Dynamic File Path
+
+Serve files based on path parameters:
+
+```python
+from pathlib import Path
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
+
+app = FastAPI()
+
+@app.get("/files/{filename}")
+async def get_file(filename: str):
+    file_path = Path(f"static/{filename}")
+    
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    
+    return FileResponse(file_path)
+```
+
+## Automatic Features
+
+### Content Type Detection
+
+The media type is automatically detected based on file extension:
+
+- `.pdf` → `application/pdf`
+- `.jpg`, `.jpeg` → `image/jpeg`
+- `.png` → `image/png`
+- `.mp4` → `video/mp4`
+- `.txt` → `text/plain`
+- etc.
+
+### Range Requests
+
+`FileResponse` automatically supports HTTP range requests, enabling:
+
+- Video/audio seeking in browsers
+- Resume interrupted downloads
+- Efficient bandwidth usage
+
+### Caching Headers
+
+Automatically includes:
+
+- `Content-Length` - File size
+- `Last-Modified` - File modification time
+- `ETag` - Entity tag for caching
+
+## Content-Disposition
+
+The `Content-Disposition` header controls how browsers handle the file:
+
+### attachment (default)
+
+Forces download with optional custom filename:
+
+```python
+FileResponse(
+    path="data.csv",
+    filename="export.csv"  # Downloaded as "export.csv"
+)
+```
+
+### inline
+
+Displays in browser (for images, PDFs, videos):
+
+```python
+FileResponse(
+    path="image.jpg",
+    content_disposition_type="inline"
+)
+```
+
+## Properties
+
+### chunk_size
+
+The size of chunks when streaming the file (default: 64KB):
+
+```python
+FileResponse.chunk_size  # 65536 bytes (64KB)
+```
+
+## Notes
+
+- `FileResponse` is more efficient than manually streaming files with `StreamingResponse`
+- Files are streamed in chunks, not loaded entirely into memory
+- Supports serving files of any size
+- Automatically handles HEAD requests
+- Works with both synchronous and asynchronous path operations
+- Media type detection requires proper file extensions
+
+## Security Considerations
+
+- Always validate file paths to prevent directory traversal attacks
+- Don't expose sensitive file paths in error messages
+- Consider using absolute paths or validating against allowed directories
+- Be cautious with user-provided filenames
+
+```python
+from pathlib import Path
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
+
+app = FastAPI()
+ALLOWED_DIR = Path("/var/www/static").resolve()
+
+@app.get("/files/{filename}")
+async def get_file(filename: str):
+    file_path = (ALLOWED_DIR / filename).resolve()
+    
+    # Prevent directory traversal
+    if not file_path.is_relative_to(ALLOWED_DIR):
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    
+    return FileResponse(file_path)
+```
+
+## Related
+
+- [StreamingResponse](/api/responses/streaming-response) - For streaming data
+- [StaticFiles](https://fastapi.tiangolo.com/tutorial/static-files/) - Serving static file directories
+- [Response](/api/responses/response) - Base response class

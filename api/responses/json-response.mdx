@@ -1,0 +1,128 @@
+---
+title: JSONResponse
+description: Response class for returning JSON-encoded data with application/json media type
+---
+
+`JSONResponse` is a response class that serializes data to JSON format. It's the default response class in FastAPI when you return data from path operations.
+
+## Import
+
+```python
+from fastapi.responses import JSONResponse
+```
+
+## Class Signature
+
+```python
+class JSONResponse(Response):
+    media_type = "application/json"
+```
+
+## Constructor Parameters
+
+<ParamField path="content" type="Any" default="None">
+  The data to be JSON-serialized and returned in the response body. Can be any JSON-serializable type including dicts, lists, Pydantic models, etc.
+</ParamField>
+
+<ParamField path="status_code" type="int" default="200">
+  The HTTP status code for the response.
+</ParamField>
+
+<ParamField path="headers" type="dict | None" default="None">
+  Additional HTTP headers to include in the response.
+</ParamField>
+
+<ParamField path="media_type" type="str | None" default="None">
+  Override the default media type. If not provided, uses `application/json`.
+</ParamField>
+
+<ParamField path="background" type="BackgroundTask | None" default="None">
+  Background task to run after returning the response.
+</ParamField>
+
+## Usage
+
+### Automatic JSON Response
+
+FastAPI automatically returns `JSONResponse` when you return data:
+
+```python
+from fastapi import FastAPI
+
+app = FastAPI()
+
+@app.get("/items/")
+async def read_items():
+    return {"item_id": "Foo", "name": "Bar"}
+```
+
+### Explicit JSONResponse
+
+Return `JSONResponse` directly to control status codes and headers:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+
+app = FastAPI()
+
+@app.get("/items/")
+async def read_items():
+    content = {"item_id": "Foo", "name": "Bar"}
+    return JSONResponse(
+        content=content,
+        status_code=200,
+        headers={"X-Custom-Header": "value"}
+    )
+```
+
+### Custom Status Code
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+
+app = FastAPI()
+
+@app.post("/items/")
+async def create_item():
+    return JSONResponse(
+        content={"message": "Item created"},
+        status_code=201
+    )
+```
+
+## Properties
+
+### media_type
+
+The media type for JSON responses:
+
+```python
+JSONResponse.media_type  # "application/json"
+```
+
+## Methods
+
+### render()
+
+Serializes content to JSON bytes:
+
+```python
+def render(self, content: Any) -> bytes:
+    # Returns JSON-encoded bytes
+```
+
+This method is called internally by Starlette/FastAPI to encode the response content.
+
+## Notes
+
+- FastAPI uses Pydantic for JSON serialization when a return type or response model is set, which is faster than custom response classes
+- The default JSON encoder handles common Python types like `datetime`, `UUID`, etc.
+- For Pydantic models, use response models instead of manually creating `JSONResponse` objects
+
+## Related
+
+- [HTMLResponse](/api/responses/html-response) - For returning HTML content
+- [StreamingResponse](/api/responses/streaming-response) - For streaming data
+- [Response Models](/tutorial/response-model) - Type-safe response handling

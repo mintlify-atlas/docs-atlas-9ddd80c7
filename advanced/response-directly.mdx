@@ -1,0 +1,269 @@
+---
+title: "Return a Response Directly"
+description: "Learn how to return Response objects directly from FastAPI path operations for full control over the HTTP response"
+---
+
+## Overview
+
+While FastAPI typically handles response serialization automatically, you can return a `Response` object directly when you need full control over the response, including status codes, headers, cookies, and content.
+
+## Why Return a Response Directly?
+
+Returning a `Response` object directly is useful when you need to:
+
+- Set custom headers or cookies
+- Return non-JSON content types
+- Have complete control over the response
+- Work with data that's already serialized
+- Bypass response validation
+
+## Basic Usage
+
+Return a `JSONResponse` directly:
+
+```python
+from datetime import datetime
+from fastapi import FastAPI
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+
+class Item(BaseModel):
+    title: str
+    timestamp: datetime
+    description: str | None = None
+
+app = FastAPI()
+
+@app.put("/items/{id}")
+def update_item(id: str, item: Item):
+    json_compatible_item_data = jsonable_encoder(item)
+    return JSONResponse(content=json_compatible_item_data)
+```
+
+<Info>
+When you return a `Response` object directly, FastAPI won't perform any data conversion or validation. You're responsible for ensuring the response is properly formatted.
+</Info>
+
+## Response with Custom Status Code
+
+Set a custom status code when returning a response:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+
+app = FastAPI()
+
+@app.post("/items/")
+def create_item(name: str):
+    item = {"name": name}
+    return JSONResponse(
+        content=item,
+        status_code=201
+    )
+```
+
+## When to Use Direct Response
+
+### Already Serialized Data
+
+When your data is already in the correct format:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import Response
+import json
+
+app = FastAPI()
+
+@app.get("/legacy-data")
+def get_legacy_data():
+    # Data from legacy system already JSON-serialized
+    legacy_json = get_data_from_legacy_system()
+    return Response(
+        content=legacy_json,
+        media_type="application/json"
+    )
+```
+
+### Custom Media Types
+
+Return content with specific media types:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import Response
+
+app = FastAPI()
+
+@app.get("/custom")
+def get_custom_content():
+    xml_data = """<?xml version="1.0"?>
+    <root>
+        <item>Content</item>
+    </root>"""
+    return Response(
+        content=xml_data,
+        media_type="application/xml"
+    )
+```
+
+<Tip>
+For HTML and other common content types, use the specialized response classes like `HTMLResponse`, `PlainTextResponse`, etc.
+</Tip>
+
+## Bypassing Response Validation
+
+When you need to return data that doesn't match your response model:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class Item(BaseModel):
+    name: str
+    price: float
+
+@app.get("/items/{item_id}", response_model=Item)
+def read_item(item_id: str, include_extra: bool = False):
+    item = {"name": "Portal Gun", "price": 42.0}
+    
+    if include_extra:
+        # Include extra fields not in the response model
+        item["extra_field"] = "extra_value"
+        return JSONResponse(content=item)
+    
+    return item
+```
+
+<Warning>
+Bypassing response validation means you lose the benefits of automatic validation and documentation. Use this sparingly and only when necessary.
+</Warning>
+
+## Background Tasks with Direct Response
+
+Combine direct responses with background tasks:
+
+```python
+from fastapi import BackgroundTasks, FastAPI
+from fastapi.responses import JSONResponse
+
+app = FastAPI()
+
+def write_log(message: str):
+    with open("log.txt", "a") as log:
+        log.write(message + "\n")
+
+@app.post("/send-notification/")
+def send_notification(
+    email: str,
+    background_tasks: BackgroundTasks
+):
+    background_tasks.add_task(write_log, f"Notification sent to {email}")
+    response = JSONResponse(
+        content={"message": "Notification sent"},
+        status_code=202
+    )
+    return response
+```
+
+## Combining Data Return and Direct Response
+
+You can conditionally return either serialized data or a direct response:
+
+```python
+from typing import Union
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse, Response
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class Item(BaseModel):
+    name: str
+    price: float
+
+@app.get("/items/{item_id}")
+def read_item(
+    item_id: str,
+    raw: bool = False
+) -> Union[Item, Response]:
+    item_data = {"name": "Portal Gun", "price": 42.0}
+    
+    if raw:
+        # Return raw JSON response
+        import json
+        return Response(
+            content=json.dumps(item_data),
+            media_type="application/json"
+        )
+    
+    # Let FastAPI handle serialization and validation
+    return Item(**item_data)
+```
+
+## Setting Headers with Direct Response
+
+Add custom headers when returning a response:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+
+app = FastAPI()
+
+@app.get("/items/")
+def read_items():
+    content = {"items": ["item1", "item2"]}
+    headers = {
+        "X-Custom-Header": "custom-value",
+        "Cache-Control": "max-age=3600"
+    }
+    return JSONResponse(
+        content=content,
+        headers=headers
+    )
+```
+
+See [Response Headers](/advanced/response-headers) for more details on working with headers.
+
+## Performance Considerations
+
+Returning a `Response` directly can be more efficient when:
+
+- Data is already serialized (no need to serialize again)
+- You're returning large amounts of data
+- You want to avoid the overhead of response validation
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import Response
+
+app = FastAPI()
+
+@app.get("/large-data")
+def get_large_data():
+    # Assume this returns pre-serialized JSON
+    large_json = get_precomputed_json_from_cache()
+    return Response(
+        content=large_json,
+        media_type="application/json"
+    )
+```
+
+<Note>
+While returning `Response` objects directly gives you more control, you lose automatic OpenAPI documentation for the response structure. Consider documenting the response manually using the `responses` parameter.
+</Note>
+
+## Best Practices
+
+1. **Use sparingly**: Only return `Response` directly when you need the extra control
+2. **Document manually**: Add response documentation when bypassing automatic serialization
+3. **Validate data**: Even when returning responses directly, validate important data
+4. **Use typed responses**: Prefer specific response classes (`JSONResponse`, `HTMLResponse`) over the generic `Response`
+5. **Consider background tasks**: Direct responses work seamlessly with background tasks
+6. **Set proper media types**: Always specify the correct `media_type` for your content

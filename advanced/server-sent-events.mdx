@@ -1,0 +1,340 @@
+---
+title: Server-Sent Events (SSE)
+description: Stream real-time updates to clients using Server-Sent Events in FastAPI
+---
+
+Server-Sent Events (SSE) provide a simple way to stream real-time updates from the server to the client over HTTP. Unlike WebSockets, SSE is unidirectional (server to client only) and uses the standard HTTP protocol.
+
+## Basic SSE Endpoint
+
+Create an SSE endpoint using `EventSourceResponse` and `yield`:
+
+```python
+from collections.abc import AsyncIterable
+from fastapi import FastAPI
+from fastapi.sse import EventSourceResponse
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class Item(BaseModel):
+    name: str
+    description: str | None
+
+items = [
+    Item(name="Plumbus", description="A multi-purpose household device."),
+    Item(name="Portal Gun", description="A portal opening device."),
+    Item(name="Meeseeks Box", description="A box that summons a Meeseeks."),
+]
+
+@app.get("/items/stream", response_class=EventSourceResponse)
+async def sse_items() -> AsyncIterable[Item]:
+    for item in items:
+        yield item
+```
+
+<Note>
+When you yield plain objects (dicts, Pydantic models, etc.), FastAPI automatically JSON-encodes them and sends them as SSE `data:` fields.
+</Note>
+
+## ServerSentEvent Model
+
+For fine-grained control over SSE events, use the `ServerSentEvent` model:
+
+```python
+from collections.abc import AsyncIterable
+from fastapi import FastAPI
+from fastapi.sse import EventSourceResponse, ServerSentEvent
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class Item(BaseModel):
+    name: str
+    price: float
+
+items = [
+    Item(name="Plumbus", price=32.99),
+    Item(name="Portal Gun", price=999.99),
+    Item(name="Meeseeks Box", price=49.99),
+]
+
+@app.get("/items/stream", response_class=EventSourceResponse)
+async def stream_items() -> AsyncIterable[ServerSentEvent]:
+    yield ServerSentEvent(comment="stream of item updates")
+    for i, item in enumerate(items):
+        yield ServerSentEvent(
+            data=item,
+            event="item_update",
+            id=str(i + 1),
+            retry=5000
+        )
+```
+
+## ServerSentEvent Fields
+
+### data
+
+The event payload. Can be any JSON-serializable value:
+
+```python
+yield ServerSentEvent(data={"message": "Hello", "count": 42})
+yield ServerSentEvent(data="hello")  # JSON-encoded as "hello" (with quotes)
+yield ServerSentEvent(data=item)  # Pydantic model, auto-serialized
+```
+
+<Warning>
+All `data` values, including plain strings, are JSON-serialized. For example, `data="hello"` produces `data: "hello"` on the wire (with quotes).
+</Warning>
+
+### raw_data
+
+Send raw string data without JSON encoding:
+
+```python
+from collections.abc import AsyncIterable
+from fastapi import FastAPI
+from fastapi.sse import EventSourceResponse, ServerSentEvent
+
+app = FastAPI()
+
+@app.get("/logs/stream", response_class=EventSourceResponse)
+async def stream_logs() -> AsyncIterable[ServerSentEvent]:
+    logs = [
+        "2025-01-01 INFO  Application started",
+        "2025-01-01 DEBUG Connected to database",
+        "2025-01-01 WARN  High memory usage detected",
+    ]
+    for log_line in logs:
+        yield ServerSentEvent(raw_data=log_line)
+```
+
+<Info>
+Use `raw_data` when you need to send pre-formatted text, HTML fragments, CSV lines, or any non-JSON payload. The `data` and `raw_data` fields are mutually exclusive.
+</Info>
+
+### event
+
+Optional event type name that maps to `addEventListener(event, ...)` on the browser:
+
+```python
+yield ServerSentEvent(data=item, event="item_update")
+yield ServerSentEvent(data=error, event="error")
+```
+
+When omitted, the browser dispatches on the generic `message` event.
+
+### id
+
+Optional event ID for resuming streams:
+
+```python
+for i, item in enumerate(items):
+    yield ServerSentEvent(data=item, id=str(i))
+```
+
+The browser sends this value back as the `Last-Event-ID` header on automatic reconnection.
+
+<Warning>
+The `id` field must not contain null (`\0`) characters.
+</Warning>
+
+### retry
+
+Optional reconnection time in milliseconds:
+
+```python
+yield ServerSentEvent(
+    data=item,
+    event="item_update",
+    retry=5000  # Reconnect after 5 seconds
+)
+```
+
+Tells the browser how long to wait before reconnecting after the connection is lost.
+
+### comment
+
+Optional comment line(s) for keep-alive pings:
+
+```python
+yield ServerSentEvent(comment="Keep-alive ping")
+```
+
+Comment lines start with `:` in the SSE wire format and are ignored by `EventSource` clients. Useful for preventing proxy/load-balancer timeouts.
+
+<Tip>
+FastAPI automatically sends keep-alive pings every 15 seconds to prevent connection timeouts. You don't need to manually send comment events for this purpose.
+</Tip>
+
+## Resuming Streams with Last-Event-ID
+
+Handle reconnections by reading the `Last-Event-ID` header:
+
+```python
+from collections.abc import AsyncIterable
+from typing import Annotated
+from fastapi import FastAPI, Header
+from fastapi.sse import EventSourceResponse, ServerSentEvent
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class Item(BaseModel):
+    name: str
+    price: float
+
+items = [
+    Item(name="Plumbus", price=32.99),
+    Item(name="Portal Gun", price=999.99),
+    Item(name="Meeseeks Box", price=49.99),
+]
+
+@app.get("/items/stream", response_class=EventSourceResponse)
+async def stream_items(
+    last_event_id: Annotated[int | None, Header()] = None,
+) -> AsyncIterable[ServerSentEvent]:
+    start = last_event_id + 1 if last_event_id is not None else 0
+    for i, item in enumerate(items):
+        if i < start:
+            continue
+        yield ServerSentEvent(data=item, id=str(i))
+```
+
+## SSE with POST Requests
+
+`EventSourceResponse` works with any HTTP method, including `POST`:
+
+```python
+from collections.abc import AsyncIterable
+from fastapi import FastAPI
+from fastapi.sse import EventSourceResponse, ServerSentEvent
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class Prompt(BaseModel):
+    text: str
+
+@app.post("/chat/stream", response_class=EventSourceResponse)
+async def stream_chat(prompt: Prompt) -> AsyncIterable[ServerSentEvent]:
+    words = prompt.text.split()
+    for word in words:
+        yield ServerSentEvent(data=word, event="token")
+    yield ServerSentEvent(raw_data="[DONE]", event="done")
+```
+
+<Info>
+SSE over POST is useful for protocols like MCP (Model Context Protocol) that require streaming responses with request bodies.
+</Info>
+
+## Synchronous Generators
+
+You can use regular (non-async) generator functions:
+
+```python
+from collections.abc import Iterable
+from fastapi import FastAPI
+from fastapi.sse import EventSourceResponse
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class Item(BaseModel):
+    name: str
+    description: str | None
+
+@app.get("/items/stream", response_class=EventSourceResponse)
+def sse_items() -> Iterable[Item]:
+    for item in items:
+        yield item
+```
+
+## Client-Side JavaScript
+
+Connect to SSE endpoints using the `EventSource` API:
+
+```javascript
+const eventSource = new EventSource("http://localhost:8000/items/stream");
+
+// Listen to the generic "message" event
+eventSource.onmessage = function(event) {
+    const data = JSON.parse(event.data);
+    console.log("Received:", data);
+};
+
+// Listen to custom events
+eventSource.addEventListener("item_update", function(event) {
+    const item = JSON.parse(event.data);
+    console.log("Item update:", item);
+});
+
+// Handle errors
+eventSource.onerror = function(error) {
+    console.error("SSE Error:", error);
+    eventSource.close();
+};
+
+// Close the connection
+eventSource.close();
+```
+
+## SSE with POST (JavaScript)
+
+For POST requests, use `fetch` with a `ReadableStream`:
+
+```javascript
+const response = await fetch("http://localhost:8000/chat/stream", {
+    method: "POST",
+    headers: {
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ text: "Hello world" }),
+});
+
+const reader = response.body.getReader();
+const decoder = new TextDecoder();
+
+while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    
+    const chunk = decoder.decode(value);
+    console.log("Received chunk:", chunk);
+}
+```
+
+## SSE Wire Format
+
+SSE events follow the `text/event-stream` format:
+
+```
+event: item_update
+data: {"name":"Plumbus","price":32.99}
+id: 1
+retry: 5000
+
+```
+
+Each event is terminated by a blank line (`\n\n`).
+
+<Note>
+FastAPI automatically handles SSE wire format encoding. You don't need to manually format events.
+</Note>
+
+## When to Use SSE vs WebSockets
+
+Use **Server-Sent Events** when:
+- You only need server-to-client communication
+- You want automatic reconnection with event replay
+- You prefer working over standard HTTP/HTTPS
+- You're building notifications, live feeds, or progress updates
+
+Use **WebSockets** when:
+- You need bidirectional communication
+- You require lower latency
+- You're building chat applications or real-time collaboration tools
+
+<Tip>
+SSE has several advantages: automatic reconnection, event IDs for resuming streams, and compatibility with HTTP/2 multiplexing. It's often the simpler choice for one-way streaming.
+</Tip>

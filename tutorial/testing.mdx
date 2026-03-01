@@ -1,0 +1,512 @@
+---
+title: Testing
+description: Test your FastAPI application using TestClient and pytest
+---
+
+FastAPI provides excellent testing support through the `TestClient`, which is built on top of Starlette's testing utilities and uses the HTTPX library.
+
+## Installing Test Dependencies
+
+Install pytest and httpx:
+
+```bash
+pip install pytest httpx
+```
+
+<Note>
+If you installed FastAPI with `pip install fastapi[standard]`, these dependencies are already included.
+</Note>
+
+## Using TestClient
+
+Import `TestClient` and create a client instance with your FastAPI app:
+
+```python
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+app = FastAPI()
+
+@app.get("/")
+async def read_main():
+    return {"msg": "Hello World"}
+
+client = TestClient(app)
+
+def test_read_main():
+    response = client.get("/")
+    assert response.status_code == 200
+    assert response.json() == {"msg": "Hello World"}
+```
+
+<Info>
+You can use both `def` and `async def` for test functions with TestClient. The client works the same way regardless.
+</Info>
+
+## Basic Testing Pattern
+
+<Steps>
+
+<Step title="Create TestClient">
+Instantiate `TestClient` with your FastAPI application:
+
+```python
+from fastapi.testclient import TestClient
+from .main import app
+
+client = TestClient(app)
+```
+</Step>
+
+<Step title="Make Requests">
+Use the client to make HTTP requests:
+
+```python
+response = client.get("/items/")
+response = client.post("/items/", json={"name": "Item"})
+```
+</Step>
+
+<Step title="Assert Results">
+Verify the response:
+
+```python
+assert response.status_code == 200
+assert response.json() == {"name": "Item"}
+```
+</Step>
+
+</Steps>
+
+## Test File Organization
+
+Organize your tests in a separate directory:
+
+```
+project/
+├── app/
+│   ├── __init__.py
+│   └── main.py
+└── tests/
+    ├── __init__.py
+    └── test_main.py
+```
+
+### Example Test File
+
+```python
+# tests/test_main.py
+from fastapi.testclient import TestClient
+from app.main import app
+
+client = TestClient(app)
+
+def test_read_main():
+    response = client.get("/")
+    assert response.status_code == 200
+    assert response.json() == {"msg": "Hello World"}
+
+def test_read_item():
+    response = client.get("/items/foo")
+    assert response.status_code == 200
+    assert response.json() == {
+        "item_id": "foo",
+        "name": "Foo"
+    }
+```
+
+## Testing Different HTTP Methods
+
+### GET Requests
+
+```python
+def test_get_items():
+    response = client.get("/items/")
+    assert response.status_code == 200
+    assert isinstance(response.json(), list)
+```
+
+### POST Requests
+
+```python
+def test_create_item():
+    response = client.post(
+        "/items/",
+        json={"name": "Foo", "price": 42.0}
+    )
+    assert response.status_code == 200
+    assert response.json()["name"] == "Foo"
+```
+
+### PUT Requests
+
+```python
+def test_update_item():
+    response = client.put(
+        "/items/1",
+        json={"name": "Updated", "price": 50.0}
+    )
+    assert response.status_code == 200
+```
+
+### DELETE Requests
+
+```python
+def test_delete_item():
+    response = client.delete("/items/1")
+    assert response.status_code == 200
+    assert response.json() == {"message": "Item deleted"}
+```
+
+## Testing with Headers
+
+Add headers to your requests:
+
+```python
+def test_read_item_with_token():
+    response = client.get(
+        "/items/foo",
+        headers={"X-Token": "coneofsilence"}
+    )
+    assert response.status_code == 200
+
+def test_read_item_bad_token():
+    response = client.get(
+        "/items/foo",
+        headers={"X-Token": "invalid"}
+    )
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Invalid X-Token header"}
+```
+
+## Testing Request Bodies
+
+### JSON Bodies
+
+```python
+def test_create_item():
+    response = client.post(
+        "/items/",
+        json={"id": "foo", "title": "Foo", "description": "A foo item"}
+    )
+    assert response.status_code == 200
+```
+
+### Form Data
+
+```python
+def test_login():
+    response = client.post(
+        "/login",
+        data={"username": "user", "password": "pass"}
+    )
+    assert response.status_code == 200
+```
+
+### File Uploads
+
+```python
+def test_upload_file():
+    response = client.post(
+        "/upload",
+        files={"file": ("test.txt", b"file content", "text/plain")}
+    )
+    assert response.status_code == 200
+```
+
+## Testing Query Parameters
+
+```python
+def test_read_items_with_query():
+    response = client.get("/items/?skip=0&limit=10")
+    assert response.status_code == 200
+    assert len(response.json()) <= 10
+```
+
+## Complete Testing Example
+
+### Application Code (main.py)
+
+```python
+from fastapi import FastAPI, Header, HTTPException
+from pydantic import BaseModel
+
+fake_secret_token = "coneofsilence"
+
+fake_db = {
+    "foo": {"id": "foo", "title": "Foo", "description": "There goes my hero"},
+    "bar": {"id": "bar", "title": "Bar", "description": "The bartenders"},
+}
+
+app = FastAPI()
+
+class Item(BaseModel):
+    id: str
+    title: str
+    description: str | None = None
+
+@app.get("/items/{item_id}", response_model=Item)
+async def read_main(item_id: str, x_token: str = Header()):
+    if x_token != fake_secret_token:
+        raise HTTPException(status_code=400, detail="Invalid X-Token header")
+    if item_id not in fake_db:
+        raise HTTPException(status_code=404, detail="Item not found")
+    return fake_db[item_id]
+
+@app.post("/items/")
+async def create_item(item: Item, x_token: str = Header()) -> Item:
+    if x_token != fake_secret_token:
+        raise HTTPException(status_code=400, detail="Invalid X-Token header")
+    if item.id in fake_db:
+        raise HTTPException(status_code=409, detail="Item already exists")
+    fake_db[item.id] = item.model_dump()
+    return item
+```
+
+### Test Code (test_main.py)
+
+```python
+from fastapi.testclient import TestClient
+from .main import app
+
+client = TestClient(app)
+
+def test_read_item():
+    response = client.get("/items/foo", headers={"X-Token": "coneofsilence"})
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": "foo",
+        "title": "Foo",
+        "description": "There goes my hero",
+    }
+
+def test_read_item_bad_token():
+    response = client.get("/items/foo", headers={"X-Token": "hailhydra"})
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Invalid X-Token header"}
+
+def test_read_nonexistent_item():
+    response = client.get("/items/baz", headers={"X-Token": "coneofsilence"})
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Item not found"}
+
+def test_create_item():
+    response = client.post(
+        "/items/",
+        headers={"X-Token": "coneofsilence"},
+        json={"id": "foobar", "title": "Foo Bar", "description": "The Foo Barters"},
+    )
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": "foobar",
+        "title": "Foo Bar",
+        "description": "The Foo Barters",
+    }
+
+def test_create_item_bad_token():
+    response = client.post(
+        "/items/",
+        headers={"X-Token": "hailhydra"},
+        json={"id": "bazz", "title": "Bazz", "description": "Drop the bazz"},
+    )
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Invalid X-Token header"}
+
+def test_create_existing_item():
+    response = client.post(
+        "/items/",
+        headers={"X-Token": "coneofsilence"},
+        json={
+            "id": "foo",
+            "title": "The Foo ID Stealers",
+            "description": "There goes my stealer",
+        },
+    )
+    assert response.status_code == 409
+    assert response.json() == {"detail": "Item already exists"}
+```
+
+## Running Tests
+
+Run tests with pytest:
+
+```bash
+# Run all tests
+pytest
+
+# Run specific test file
+pytest tests/test_main.py
+
+# Run specific test
+pytest tests/test_main.py::test_read_item
+
+# Run with verbose output
+pytest -v
+
+# Run with coverage
+pytest --cov=app tests/
+```
+
+## Testing with Fixtures
+
+Use pytest fixtures for reusable test setup:
+
+```python
+import pytest
+from fastapi.testclient import TestClient
+from .main import app
+
+@pytest.fixture
+def client():
+    return TestClient(app)
+
+@pytest.fixture
+def auth_headers():
+    return {"X-Token": "coneofsilence"}
+
+def test_read_item(client, auth_headers):
+    response = client.get("/items/foo", headers=auth_headers)
+    assert response.status_code == 200
+
+def test_create_item(client, auth_headers):
+    response = client.post(
+        "/items/",
+        headers=auth_headers,
+        json={"id": "test", "title": "Test Item"},
+    )
+    assert response.status_code == 200
+```
+
+## Testing Dependencies
+
+Override dependencies for testing:
+
+```python
+from fastapi import Depends, FastAPI
+from fastapi.testclient import TestClient
+
+app = FastAPI()
+
+async def get_current_user():
+    return {"username": "johndoe"}
+
+@app.get("/users/me")
+async def read_users_me(current_user = Depends(get_current_user)):
+    return current_user
+
+# In tests
+async def override_get_current_user():
+    return {"username": "testuser"}
+
+app.dependency_overrides[get_current_user] = override_get_current_user
+
+client = TestClient(app)
+
+def test_read_users_me():
+    response = client.get("/users/me")
+    assert response.status_code == 200
+    assert response.json() == {"username": "testuser"}
+```
+
+<Info>
+Dependency overrides are useful for mocking databases, authentication, and other external services.
+</Info>
+
+## Testing Database Operations
+
+Use a test database or mock:
+
+```python
+import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from .database import Base, get_db
+from .main import app
+
+# Use SQLite in-memory database for tests
+TEST_DATABASE_URL = "sqlite:///./test.db"
+
+engine = create_engine(TEST_DATABASE_URL, connect_args={"check_same_thread": False})
+TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+@pytest.fixture
+def test_db():
+    Base.metadata.create_all(bind=engine)
+    yield
+    Base.metadata.drop_all(bind=engine)
+
+def override_get_db():
+    try:
+        db = TestingSessionLocal()
+        yield db
+    finally:
+        db.close()
+
+app.dependency_overrides[get_db] = override_get_db
+
+def test_create_user(test_db):
+    client = TestClient(app)
+    response = client.post(
+        "/users/",
+        json={"email": "test@example.com", "password": "secret"},
+    )
+    assert response.status_code == 200
+```
+
+## Testing WebSockets
+
+Test WebSocket connections:
+
+```python
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+app = FastAPI()
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket):
+    await websocket.accept()
+    await websocket.send_text("Hello WebSocket")
+    await websocket.close()
+
+client = TestClient(app)
+
+def test_websocket():
+    with client.websocket_connect("/ws") as websocket:
+        data = websocket.receive_text()
+        assert data == "Hello WebSocket"
+```
+
+## Best Practices
+
+<Steps>
+
+<Step title="Separate Test Files">
+Organize tests by feature or module, mirroring your application structure.
+</Step>
+
+<Step title="Use Fixtures">
+Create reusable fixtures for common setup like database connections, test clients, and authentication.
+</Step>
+
+<Step title="Test Edge Cases">
+Test not just the happy path, but also error conditions, validation failures, and edge cases.
+</Step>
+
+<Step title="Mock External Services">
+Use dependency overrides to mock external APIs, databases, and services.
+</Step>
+
+<Step title="Clean Up">
+Ensure tests clean up after themselves (close connections, delete test data, etc.).
+</Step>
+
+<Step title="Test Coverage">
+Aim for high test coverage, but focus on meaningful tests over just hitting coverage targets.
+</Step>
+
+</Steps>
+
+<Tip>
+TestClient runs your FastAPI application in the same process, making tests fast and eliminating network overhead. You can use it with both synchronous and asynchronous code.
+</Tip>

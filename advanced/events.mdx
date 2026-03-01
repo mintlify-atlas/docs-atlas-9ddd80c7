@@ -1,0 +1,396 @@
+---
+title: "Startup and Shutdown Events"
+description: "Handle application lifecycle events in FastAPI with startup, shutdown, and lifespan context managers"
+---
+
+FastAPI allows you to define logic that should run before the application starts receiving requests and after the application shuts down. This is useful for initializing resources, database connections, or cleaning up.
+
+## Lifespan Context Manager (Recommended)
+
+The modern approach uses an async context manager with the `lifespan` parameter:
+
+```python
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+
+ml_models = {}
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: Load resources
+    ml_models["model"] = load_ml_model()
+    print("Application started")
+    
+    yield
+    
+    # Shutdown: Clean up resources
+    ml_models.clear()
+    print("Application stopped")
+
+app = FastAPI(lifespan=lifespan)
+
+@app.get("/predict")
+async def predict(x: float):
+    result = ml_models["model"](x)
+    return {"result": result}
+```
+
+<Tip>
+The lifespan context manager is the recommended approach for handling startup and shutdown events. It provides better structure and error handling.
+</Tip>
+
+## How It Works
+
+1. Code before `yield` runs at **startup** (before the app starts receiving requests)
+2. The application runs and handles requests
+3. Code after `yield` runs at **shutdown** (when the app is stopping)
+
+## Common Use Cases
+
+### Database Connection
+
+```python
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+import asyncpg
+
+db_pool = None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: Create database connection pool
+    global db_pool
+    db_pool = await asyncpg.create_pool(
+        host="localhost",
+        port=5432,
+        user="user",
+        password="password",
+        database="mydb"
+    )
+    yield
+    
+    # Shutdown: Close database connection pool
+    await db_pool.close()
+
+app = FastAPI(lifespan=lifespan)
+
+@app.get("/users/{user_id}")
+async def get_user(user_id: int):
+    async with db_pool.acquire() as conn:
+        user = await conn.fetchrow("SELECT * FROM users WHERE id = $1", user_id)
+        return user
+```
+
+### Loading ML Models
+
+```python
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+import pickle
+
+models = {}
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Load multiple models at startup
+    models["sentiment"] = pickle.load(open("sentiment_model.pkl", "rb"))
+    models["classification"] = pickle.load(open("classification_model.pkl", "rb"))
+    print(f"Loaded {len(models)} models")
+    
+    yield
+    
+    # Clean up models
+    models.clear()
+    print("Models unloaded")
+
+app = FastAPI(lifespan=lifespan)
+
+@app.post("/analyze")
+async def analyze(text: str):
+    sentiment = models["sentiment"].predict([text])[0]
+    category = models["classification"].predict([text])[0]
+    return {"sentiment": sentiment, "category": category}
+```
+
+### Redis Connection
+
+```python
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+import redis.asyncio as redis
+
+redis_client = None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: Connect to Redis
+    global redis_client
+    redis_client = await redis.from_url("redis://localhost")
+    
+    yield
+    
+    # Shutdown: Close Redis connection
+    await redis_client.close()
+
+app = FastAPI(lifespan=lifespan)
+
+@app.get("/cache/{key}")
+async def get_cache(key: str):
+    value = await redis_client.get(key)
+    return {"key": key, "value": value}
+```
+
+## Event Decorators (Legacy)
+
+You can also use event decorators, though the lifespan context manager is preferred:
+
+### Startup Events
+
+```python
+from fastapi import FastAPI
+
+app = FastAPI()
+
+items = {}
+
+@app.on_event("startup")
+async def startup_event():
+    items["foo"] = {"name": "Fighters"}
+    items["bar"] = {"name": "Tenders"}
+    print("Application started")
+
+@app.get("/items/{item_id}")
+async def read_items(item_id: str):
+    return items[item_id]
+```
+
+### Shutdown Events
+
+```python
+from fastapi import FastAPI
+
+app = FastAPI()
+
+@app.on_event("shutdown")
+def shutdown_event():
+    with open("log.txt", mode="a") as log:
+        log.write("Application shutdown\n")
+    print("Application stopped")
+
+@app.get("/items/")
+async def read_items():
+    return [{"name": "Foo"}]
+```
+
+### Multiple Event Handlers
+
+You can define multiple handlers for the same event:
+
+```python
+from fastapi import FastAPI
+
+app = FastAPI()
+
+@app.on_event("startup")
+async def startup_db():
+    print("Connecting to database...")
+
+@app.on_event("startup")
+async def startup_cache():
+    print("Connecting to cache...")
+
+@app.on_event("shutdown")
+async def shutdown_db():
+    print("Closing database connection...")
+
+@app.on_event("shutdown")
+async def shutdown_cache():
+    print("Closing cache connection...")
+```
+
+<Warning>
+The `@app.on_event()` decorators are deprecated in favor of the lifespan context manager. They will be removed in a future version of FastAPI.
+</Warning>
+
+## Combining Multiple Resources
+
+```python
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+import asyncpg
+import redis.asyncio as redis
+
+resources = {}
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: Initialize all resources
+    resources["db"] = await asyncpg.create_pool(
+        "postgresql://user:pass@localhost/db"
+    )
+    resources["cache"] = await redis.from_url("redis://localhost")
+    resources["model"] = load_ml_model()
+    print("All resources initialized")
+    
+    yield
+    
+    # Shutdown: Clean up all resources
+    await resources["db"].close()
+    await resources["cache"].close()
+    resources.clear()
+    print("All resources cleaned up")
+
+app = FastAPI(lifespan=lifespan)
+
+@app.get("/")
+async def root():
+    return {"status": "ready", "resources": len(resources)}
+```
+
+## Error Handling
+
+```python
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+import logging
+
+logger = logging.getLogger(__name__)
+resources = {}
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    try:
+        # Startup with error handling
+        resources["db"] = await connect_to_database()
+        logger.info("Database connected")
+        
+        resources["cache"] = await connect_to_cache()
+        logger.info("Cache connected")
+        
+    except Exception as e:
+        logger.error(f"Startup failed: {e}")
+        # Clean up any partially initialized resources
+        if "db" in resources:
+            await resources["db"].close()
+        raise
+    
+    yield
+    
+    # Shutdown with error handling
+    try:
+        if "db" in resources:
+            await resources["db"].close()
+            logger.info("Database closed")
+        
+        if "cache" in resources:
+            await resources["cache"].close()
+            logger.info("Cache closed")
+    except Exception as e:
+        logger.error(f"Shutdown error: {e}")
+
+app = FastAPI(lifespan=lifespan)
+```
+
+## Using Dependency Injection
+
+Access lifespan resources in route handlers:
+
+```python
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, Depends
+from typing import AsyncGenerator
+import asyncpg
+
+db_pool = None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global db_pool
+    db_pool = await asyncpg.create_pool("postgresql://localhost/db")
+    yield
+    await db_pool.close()
+
+app = FastAPI(lifespan=lifespan)
+
+async def get_db() -> AsyncGenerator:
+    async with db_pool.acquire() as conn:
+        yield conn
+
+@app.get("/users/{user_id}")
+async def get_user(user_id: int, db = Depends(get_db)):
+    user = await db.fetchrow("SELECT * FROM users WHERE id = $1", user_id)
+    return user
+```
+
+## Testing with Lifespan Events
+
+```python
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+resources = {}
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    resources["test_data"] = {"initialized": True}
+    yield
+    resources.clear()
+
+app = FastAPI(lifespan=lifespan)
+
+@app.get("/status")
+async def get_status():
+    return resources
+
+def test_app():
+    # TestClient automatically handles lifespan events
+    with TestClient(app) as client:
+        response = client.get("/status")
+        assert response.json() == {"test_data": {"initialized": True}}
+```
+
+<Info>
+The `TestClient` automatically handles lifespan events, running startup code when entering the context manager and shutdown code when exiting.
+</Info>
+
+## Best Practices
+
+<Note>
+- Use the lifespan context manager instead of event decorators
+- Initialize expensive resources (DB connections, ML models) at startup
+- Always clean up resources in the shutdown phase
+- Use proper error handling to prevent startup failures
+- Log startup and shutdown events for debugging
+- Keep startup time reasonable to avoid deployment timeouts
+</Note>
+
+## Migration from Events to Lifespan
+
+If you're using event decorators, here's how to migrate:
+
+```python
+# Old approach (deprecated)
+@app.on_event("startup")
+async def startup():
+    db_client.connect()
+
+@app.on_event("shutdown")
+async def shutdown():
+    db_client.disconnect()
+
+# New approach (recommended)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    db_client.connect()
+    yield
+    db_client.disconnect()
+
+app = FastAPI(lifespan=lifespan)
+```
+
+## See Also
+
+- [Custom Middleware](/advanced/middleware) - Process requests and responses
+- [Dependencies](/dependencies) - Dependency injection system
+- [Testing](/testing) - Testing FastAPI applications

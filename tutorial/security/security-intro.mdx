@@ -1,0 +1,148 @@
+---
+title: Security Introduction
+description: Learn about FastAPI's security utilities for OAuth2, API keys, and HTTP authentication
+---
+
+FastAPI provides several tools and utilities to help you handle security and authentication easily, quickly, and in a standard way.
+
+## What is Security?
+
+Security, authentication, and authorization in APIs typically involve several moving parts:
+
+- **Authentication**: Verifying who the user is
+- **Authorization**: Verifying what the user can do
+- **API Keys**: Simple secret tokens for authentication
+- **OAuth2**: Industry-standard protocol for authorization
+- **JWT Tokens**: JSON Web Tokens for stateless authentication
+
+## Security Utilities in FastAPI
+
+FastAPI provides multiple security utilities that integrate seamlessly with your API and automatic interactive documentation:
+
+### OAuth2 Tools
+
+<CardGroup cols={2}>
+  <Card title="OAuth2PasswordBearer" icon="key">
+    OAuth2 flow for authentication using a bearer token obtained with a password
+  </Card>
+  <Card title="OAuth2PasswordRequestForm" icon="keyboard">
+    Dependency class to collect username and password as form data
+  </Card>
+  <Card title="OAuth2AuthorizationCodeBearer" icon="code">
+    OAuth2 flow using authorization code (for third-party login)
+  </Card>
+  <Card title="SecurityScopes" icon="shield">
+    Handle OAuth2 scopes for fine-grained permissions
+  </Card>
+</CardGroup>
+
+### HTTP Authentication
+
+<CardGroup cols={2}>
+  <Card title="HTTPBasic" icon="user">
+    HTTP Basic authentication with username and password
+  </Card>
+  <Card title="HTTPBearer" icon="shield-halved">
+    HTTP Bearer token authentication
+  </Card>
+  <Card title="HTTPDigest" icon="fingerprint">
+    HTTP Digest authentication (stub for custom implementation)
+  </Card>
+</CardGroup>
+
+### API Key Authentication
+
+<CardGroup cols={3}>
+  <Card title="APIKeyQuery" icon="magnifying-glass">
+    API key authentication via query parameter
+  </Card>
+  <Card title="APIKeyHeader" icon="heading">
+    API key authentication via HTTP header
+  </Card>
+  <Card title="APIKeyCookie" icon="cookie">
+    API key authentication via cookie
+  </Card>
+</CardGroup>
+
+## How FastAPI Security Works
+
+FastAPI's security utilities work through the **dependency injection system**:
+
+<Steps>
+  <Step title="Define the security scheme">
+    Create an instance of a security class (e.g., `OAuth2PasswordBearer`, `HTTPBasic`)
+  </Step>
+  
+  <Step title="Use as a dependency">
+    Use the security instance as a dependency in your path operations with `Depends()`
+  </Step>
+  
+  <Step title="Automatic validation">
+    FastAPI automatically validates the security credentials and extracts the token/key
+  </Step>
+  
+  <Step title="OpenAPI integration">
+    Your API documentation automatically shows the security requirements with a "Authorize" button
+  </Step>
+</Steps>
+
+## Example: Basic OAuth2 Setup
+
+Here's a minimal example showing how FastAPI security works:
+
+```python
+from fastapi import Depends, FastAPI
+from fastapi.security import OAuth2PasswordBearer
+
+app = FastAPI()
+
+# Define the security scheme
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+@app.get("/items/")
+async def read_items(token: str = Depends(oauth2_scheme)):
+    return {"token": token}
+```
+
+In this example:
+
+- `OAuth2PasswordBearer` tells FastAPI that tokens will be obtained from a `/token` endpoint
+- When you call `/items/`, FastAPI checks for an `Authorization: Bearer <token>` header
+- The token is automatically extracted and passed to your function
+- The `/docs` page shows an "Authorize" button for testing
+
+<Warning>
+This example only extracts the token—it doesn't validate it! In real applications, you must verify tokens before trusting them.
+</Warning>
+
+## Security Standards
+
+FastAPI security utilities follow industry standards:
+
+- **OAuth2**: [RFC 6749](https://datatracker.ietf.org/doc/html/rfc6749)
+- **HTTP Basic Auth**: [RFC 7617](https://datatracker.ietf.org/doc/html/rfc7617)
+- **HTTP Bearer**: [RFC 6750](https://datatracker.ietf.org/doc/html/rfc6750)
+- **OpenAPI Security Schemes**: [OpenAPI 3.1.0 Specification](https://spec.openapis.org/oas/v3.1.0#security-scheme-object)
+
+## What's Next?
+
+Now that you understand the basics, let's build a real authentication system:
+
+<CardGroup cols={2}>
+  <Card title="First Steps" icon="1" href="/tutorial/security/first-steps">
+    Create your first OAuth2 endpoint with password flow
+  </Card>
+  <Card title="Get Current User" icon="2" href="/tutorial/security/get-current-user">
+    Build a dependency to get the currently authenticated user
+  </Card>
+  <Card title="OAuth2 with JWT" icon="3" href="/tutorial/security/oauth2-jwt">
+    Implement proper JWT token authentication with password hashing
+  </Card>
+  <Card title="OAuth2 Scopes" icon="4" href="/tutorial/security/oauth2-scopes">
+    Add fine-grained permissions with OAuth2 scopes
+  </Card>
+</CardGroup>
+
+<Note>
+Remember: Security is complex. These tutorials provide a solid foundation, but always review your security implementation carefully and consider consulting security experts for production systems.
+</Note>

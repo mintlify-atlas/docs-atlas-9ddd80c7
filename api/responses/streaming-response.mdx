@@ -1,0 +1,196 @@
+---
+title: StreamingResponse
+description: Response class for streaming data using generator functions
+---
+
+`StreamingResponse` enables streaming large amounts of data or real-time content to clients using generator functions. This is useful for large files, real-time data feeds, or when you want to start sending data before it's fully available.
+
+## Import
+
+```python
+from fastapi.responses import StreamingResponse
+```
+
+## Class Signature
+
+```python
+class StreamingResponse(Response):
+    def __init__(
+        self,
+        content: ContentStream,
+        status_code: int = 200,
+        headers: dict | None = None,
+        media_type: str | None = None,
+        background: BackgroundTask | None = None,
+    )
+```
+
+## Constructor Parameters
+
+<ParamField path="content" type="Iterable[str] | Iterable[bytes] | AsyncIterable[str] | AsyncIterable[bytes]" required>
+  A generator or async generator that yields chunks of data as strings or bytes.
+</ParamField>
+
+<ParamField path="status_code" type="int" default="200">
+  The HTTP status code for the response.
+</ParamField>
+
+<ParamField path="headers" type="dict | None" default="None">
+  Additional HTTP headers to include in the response.
+</ParamField>
+
+<ParamField path="media_type" type="str | None" default="None">
+  The media type for the response. Common values include `text/plain`, `application/octet-stream`, etc.
+</ParamField>
+
+<ParamField path="background" type="BackgroundTask | None" default="None">
+  Background task to run after the stream completes.
+</ParamField>
+
+## Usage
+
+### Basic Streaming
+
+Stream text data line by line:
+
+```python
+from collections.abc import AsyncIterable
+from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
+
+app = FastAPI()
+
+message = """Line 1
+Line 2
+Line 3"""
+
+@app.get("/stream", response_class=StreamingResponse)
+async def stream_data() -> AsyncIterable[str]:
+    for line in message.splitlines():
+        yield line + "\n"
+```
+
+### Streaming Bytes
+
+Stream binary data:
+
+```python
+from collections.abc import AsyncIterable
+from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
+
+app = FastAPI()
+
+@app.get("/stream-bytes", response_class=StreamingResponse)
+async def stream_bytes() -> AsyncIterable[bytes]:
+    data = b"Some binary data"
+    for i in range(0, len(data), 4):
+        yield data[i:i+4]
+```
+
+### Synchronous Generator
+
+Use regular (non-async) generators:
+
+```python
+from collections.abc import Iterable
+from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
+
+app = FastAPI()
+
+@app.get("/stream-sync", response_class=StreamingResponse)
+def stream_sync() -> Iterable[str]:
+    for i in range(10):
+        yield f"Chunk {i}\n"
+```
+
+### Direct StreamingResponse
+
+Create `StreamingResponse` directly with a generator:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
+
+app = FastAPI()
+
+def generate_data():
+    for i in range(100):
+        yield f"Data chunk {i}\n"
+
+@app.get("/data")
+async def stream_data():
+    return StreamingResponse(
+        generate_data(),
+        media_type="text/plain"
+    )
+```
+
+### Streaming with Custom Headers
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
+
+app = FastAPI()
+
+async def generate_csv():
+    yield "id,name,value\n"
+    yield "1,item1,100\n"
+    yield "2,item2,200\n"
+
+@app.get("/export")
+async def export_data():
+    return StreamingResponse(
+        generate_csv(),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=data.csv"}
+    )
+```
+
+### Streaming Large Files
+
+Stream file contents in chunks:
+
+```python
+import aiofiles
+from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
+
+app = FastAPI()
+
+@app.get("/large-file")
+async def stream_large_file():
+    async def file_generator():
+        async with aiofiles.open("large_file.txt", mode="rb") as f:
+            while chunk := await f.read(8192):
+                yield chunk
+    
+    return StreamingResponse(
+        file_generator(),
+        media_type="application/octet-stream"
+    )
+```
+
+## Notes
+
+- Generators can be sync or async - FastAPI handles both
+- The generator can yield `str` or `bytes`
+- String chunks are automatically encoded to UTF-8 bytes
+- The response starts sending immediately when the first chunk is yielded
+- For file downloads, consider using `FileResponse` instead for better performance
+- For Server-Sent Events, use `EventSourceResponse` instead
+
+## Performance Considerations
+
+- Streaming is ideal for large datasets that don't fit in memory
+- Clients receive data incrementally without waiting for the entire response
+- Use appropriate chunk sizes (typically 4KB-64KB for best performance)
+- Consider using `FileResponse` for static files instead of streaming manually
+
+## Related
+
+- [FileResponse](/api/responses/file-response) - Optimized for serving files
+- [EventSourceResponse](/api/responses/event-source-response) - Server-Sent Events
+- [JSONResponse](/api/responses/json-response) - For JSON data

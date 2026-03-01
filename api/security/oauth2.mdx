@@ -1,0 +1,251 @@
+---
+title: OAuth2
+description: OAuth2 authentication classes for password and authorization code flows
+---
+
+## OAuth2PasswordBearer
+
+OAuth2 flow for authentication using a bearer token obtained with a password. An instance of it would be used as a dependency.
+
+### Parameters
+
+<ParamField path="tokenUrl" type="str" required>
+  The URL to obtain the OAuth2 token. This would be the path operation that has `OAuth2PasswordRequestForm` as a dependency.
+</ParamField>
+
+<ParamField path="scheme_name" type="str | None" default="None">
+  Security scheme name. It will be included in the generated OpenAPI (e.g. visible at `/docs`).
+</ParamField>
+
+<ParamField path="scopes" type="dict[str, str] | None" default="None">
+  The OAuth2 scopes that would be required by the path operations that use this dependency.
+</ParamField>
+
+<ParamField path="description" type="str | None" default="None">
+  Security scheme description. It will be included in the generated OpenAPI (e.g. visible at `/docs`).
+</ParamField>
+
+<ParamField path="auto_error" type="bool" default="True">
+  By default, if no HTTP Authorization header is provided, required for OAuth2 authentication, it will automatically cancel the request and send the client an error.
+  
+  If `auto_error` is set to `False`, when the HTTP Authorization header is not available, instead of erroring out, the dependency result will be `None`.
+  
+  This is useful when you want to have optional authentication or when you want to have authentication that can be provided in one of multiple optional ways (for example, with OAuth2 or in a cookie).
+</ParamField>
+
+<ParamField path="refreshUrl" type="str | None" default="None">
+  The URL to refresh the token and obtain a new one.
+</ParamField>
+
+### Example
+
+```python
+from typing import Annotated
+from fastapi import Depends, FastAPI
+from fastapi.security import OAuth2PasswordBearer
+
+app = FastAPI()
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+@app.get("/items/")
+async def read_items(token: Annotated[str, Depends(oauth2_scheme)]):
+    return {"token": token}
+```
+
+---
+
+## OAuth2PasswordRequestForm
+
+This is a dependency class to collect the `username` and `password` as form data for an OAuth2 password flow.
+
+The OAuth2 specification dictates that for a password flow the data should be collected using form data (instead of JSON) and that it should have the specific fields `username` and `password`.
+
+All the initialization parameters are extracted from the request.
+
+### Parameters
+
+<ParamField path="grant_type" type="str | None" default="None">
+  The OAuth2 spec says it is required and MUST be the fixed string "password". Nevertheless, this dependency class is permissive and allows not passing it. If you want to enforce it, use instead the `OAuth2PasswordRequestFormStrict` dependency.
+</ParamField>
+
+<ParamField path="username" type="str" required>
+  `username` string. The OAuth2 spec requires the exact field name `username`.
+</ParamField>
+
+<ParamField path="password" type="str" required>
+  `password` string. The OAuth2 spec requires the exact field name `password`.
+</ParamField>
+
+<ParamField path="scope" type="str" default="">
+  A single string with actually several scopes separated by spaces. Each scope is also a string.
+  
+  For example, a single string with:
+  ```python
+  "items:read items:write users:read profile openid"
+  ```
+  
+  would represent the scopes:
+  - `items:read`
+  - `items:write`
+  - `users:read`
+  - `profile`
+  - `openid`
+</ParamField>
+
+<ParamField path="client_id" type="str | None" default="None">
+  If there's a `client_id`, it can be sent as part of the form fields. But the OAuth2 specification recommends sending the `client_id` and `client_secret` (if any) using HTTP Basic auth.
+</ParamField>
+
+<ParamField path="client_secret" type="str | None" default="None">
+  If there's a `client_password` (and a `client_id`), they can be sent as part of the form fields. But the OAuth2 specification recommends sending the `client_id` and `client_secret` (if any) using HTTP Basic auth.
+</ParamField>
+
+### Attributes
+
+After initialization, the form will have these attributes:
+
+- `grant_type`: The grant type value
+- `username`: The username value
+- `password`: The password value
+- `scopes`: A list of scope strings (parsed from the `scope` parameter)
+- `client_id`: The client ID value
+- `client_secret`: The client secret value
+
+### Example
+
+```python
+from typing import Annotated
+from fastapi import Depends, FastAPI
+from fastapi.security import OAuth2PasswordRequestForm
+
+app = FastAPI()
+
+@app.post("/login")
+def login(form_data: Annotated[OAuth2PasswordRequestForm, Depends()]):
+    data = {}
+    data["scopes"] = []
+    for scope in form_data.scopes:
+        data["scopes"].append(scope)
+    if form_data.client_id:
+        data["client_id"] = form_data.client_id
+    if form_data.client_secret:
+        data["client_secret"] = form_data.client_secret
+    return data
+```
+
+---
+
+## OAuth2PasswordRequestFormStrict
+
+This is a dependency class to collect the `username` and `password` as form data for an OAuth2 password flow.
+
+The only difference between `OAuth2PasswordRequestFormStrict` and `OAuth2PasswordRequestForm` is that `OAuth2PasswordRequestFormStrict` requires the client to send the form field `grant_type` with the value `"password"`, which is required in the OAuth2 specification, while for `OAuth2PasswordRequestForm` `grant_type` is optional.
+
+### Parameters
+
+<ParamField path="grant_type" type="str" required>
+  The OAuth2 spec says it is required and MUST be the fixed string "password". This dependency is strict about it. If you want to be permissive, use instead the `OAuth2PasswordRequestForm` dependency class.
+</ParamField>
+
+<ParamField path="username" type="str" required>
+  `username` string. The OAuth2 spec requires the exact field name `username`.
+</ParamField>
+
+<ParamField path="password" type="str" required>
+  `password` string. The OAuth2 spec requires the exact field name `password`.
+</ParamField>
+
+<ParamField path="scope" type="str" default="">
+  A single string with actually several scopes separated by spaces.
+</ParamField>
+
+<ParamField path="client_id" type="str | None" default="None">
+  If there's a `client_id`, it can be sent as part of the form fields. But the OAuth2 specification recommends sending the `client_id` and `client_secret` (if any) using HTTP Basic auth.
+</ParamField>
+
+<ParamField path="client_secret" type="str | None" default="None">
+  If there's a `client_password` (and a `client_id`), they can be sent as part of the form fields. But the OAuth2 specification recommends sending the `client_id` and `client_secret` (if any) using HTTP Basic auth.
+</ParamField>
+
+---
+
+## OAuth2AuthorizationCodeBearer
+
+OAuth2 flow for authentication using a bearer token obtained with an OAuth2 code flow. An instance of it would be used as a dependency.
+
+### Parameters
+
+<ParamField path="authorizationUrl" type="str" required>
+  The URL for OAuth2 authorization.
+</ParamField>
+
+<ParamField path="tokenUrl" type="str" required>
+  The URL to obtain the OAuth2 token.
+</ParamField>
+
+<ParamField path="refreshUrl" type="str | None" default="None">
+  The URL to refresh the token and obtain a new one.
+</ParamField>
+
+<ParamField path="scheme_name" type="str | None" default="None">
+  Security scheme name. It will be included in the generated OpenAPI (e.g. visible at `/docs`).
+</ParamField>
+
+<ParamField path="scopes" type="dict[str, str] | None" default="None">
+  The OAuth2 scopes that would be required by the path operations that use this dependency.
+</ParamField>
+
+<ParamField path="description" type="str | None" default="None">
+  Security scheme description. It will be included in the generated OpenAPI (e.g. visible at `/docs`).
+</ParamField>
+
+<ParamField path="auto_error" type="bool" default="True">
+  By default, if no HTTP Authorization header is provided, required for OAuth2 authentication, it will automatically cancel the request and send the client an error.
+  
+  If `auto_error` is set to `False`, when the HTTP Authorization header is not available, instead of erroring out, the dependency result will be `None`.
+  
+  This is useful when you want to have optional authentication or when authentication can be provided in one of multiple optional ways.
+</ParamField>
+
+### Example
+
+```python
+from fastapi import FastAPI, Depends
+from fastapi.security import OAuth2AuthorizationCodeBearer
+
+app = FastAPI()
+
+oauth2_scheme = OAuth2AuthorizationCodeBearer(
+    authorizationUrl="https://example.com/oauth/authorize",
+    tokenUrl="https://example.com/oauth/token"
+)
+
+@app.get("/items/")
+async def read_items(token: str = Depends(oauth2_scheme)):
+    return {"token": token}
+```
+
+---
+
+## SecurityScopes
+
+This is a special class that you can define in a parameter in a dependency to obtain the OAuth2 scopes required by all the dependencies in the same chain.
+
+This way, multiple dependencies can have different scopes, even when used in the same path operation. And with this, you can access all the scopes required in all those dependencies in a single place.
+
+### Parameters
+
+<ParamField path="scopes" type="list[str] | None" default="None">
+  This will be filled by FastAPI.
+</ParamField>
+
+### Attributes
+
+<ParamField path="scopes" type="list[str]">
+  The list of all the scopes required by dependencies.
+</ParamField>
+
+<ParamField path="scope_str" type="str">
+  All the scopes required by all the dependencies in a single string separated by spaces, as defined in the OAuth2 specification.
+</ParamField>

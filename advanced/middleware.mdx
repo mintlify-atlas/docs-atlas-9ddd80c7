@@ -1,0 +1,234 @@
+---
+title: "Custom Middleware"
+description: "Create custom middleware to process requests and responses in FastAPI"
+---
+
+Middleware allows you to process requests before they reach your path operations and responses before they're returned to the client. FastAPI provides multiple ways to implement middleware for different use cases.
+
+## Middleware Decorator
+
+The simplest way to create middleware is using the `@app.middleware("http")` decorator:
+
+```python
+import time
+from fastapi import FastAPI, Request
+
+app = FastAPI()
+
+@app.middleware("http")
+async def add_process_time_header(request: Request, call_next):
+    start_time = time.perf_counter()
+    response = await call_next(request)
+    process_time = time.perf_counter() - start_time
+    response.headers["X-Process-Time"] = str(process_time)
+    return response
+```
+
+<Info>
+The middleware function receives the `request` and a `call_next` function that will pass the request to the corresponding path operation, then return the response.
+</Info>
+
+## How It Works
+
+1. The middleware receives the incoming request
+2. You can perform operations before calling `call_next`
+3. Call `await call_next(request)` to pass the request to the path operation
+4. The path operation returns a response
+5. You can modify the response before returning it
+6. Return the response
+
+## Common Use Cases
+
+### Logging Requests
+
+```python
+import logging
+from fastapi import FastAPI, Request
+
+app = FastAPI()
+logger = logging.getLogger(__name__)
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    logger.info(f"Request: {request.method} {request.url}")
+    response = await call_next(request)
+    logger.info(f"Response status: {response.status_code}")
+    return response
+```
+
+### Adding Custom Headers
+
+```python
+from fastapi import FastAPI, Request
+
+app = FastAPI()
+
+@app.middleware("http")
+async def add_custom_header(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Custom-Header"] = "Custom Value"
+    response.headers["X-Request-ID"] = request.headers.get("X-Request-ID", "unknown")
+    return response
+```
+
+### Request Modification
+
+```python
+from fastapi import FastAPI, Request
+
+app = FastAPI()
+
+@app.middleware("http")
+async def modify_request(request: Request, call_next):
+    # Add custom attributes to request state
+    request.state.db_session = "database_connection"
+    request.state.user_ip = request.client.host
+    
+    response = await call_next(request)
+    return response
+```
+
+## Built-in Middleware
+
+FastAPI includes several pre-built middleware classes:
+
+### HTTPSRedirectMiddleware
+
+Redirects all HTTP requests to HTTPS:
+
+```python
+from fastapi import FastAPI
+from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
+
+app = FastAPI()
+
+app.add_middleware(HTTPSRedirectMiddleware)
+```
+
+### TrustedHostMiddleware
+
+Enforces that all requests have a valid `Host` header:
+
+```python
+from fastapi import FastAPI
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+
+app = FastAPI()
+
+app.add_middleware(
+    TrustedHostMiddleware, 
+    allowed_hosts=["example.com", "*.example.com"]
+)
+```
+
+<Warning>
+Always configure `TrustedHostMiddleware` when deploying to production to prevent HTTP Host header attacks.
+</Warning>
+
+### GZipMiddleware
+
+Compresses responses for clients that support gzip:
+
+```python
+from fastapi import FastAPI
+from fastapi.middleware.gzip import GZipMiddleware
+
+app = FastAPI()
+
+app.add_middleware(
+    GZipMiddleware, 
+    minimum_size=1000,      # Only compress responses larger than 1KB
+    compresslevel=5         # Compression level (1-9)
+)
+```
+
+## Advanced: ASGI Middleware
+
+For more complex scenarios, you can create pure ASGI middleware:
+
+```python
+from fastapi import FastAPI
+
+class CustomASGIMiddleware:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            # Process the request
+            pass
+        
+        await self.app(scope, receive, send)
+
+app = FastAPI()
+app.add_middleware(CustomASGIMiddleware)
+```
+
+<Tip>
+Use the `@app.middleware("http")` decorator for most use cases. Only create ASGI middleware when you need low-level access to the ASGI interface.
+</Tip>
+
+## Middleware Execution Order
+
+Middleware executes in the order it's added:
+
+```python
+from fastapi import FastAPI
+
+app = FastAPI()
+
+app.add_middleware(FirstMiddleware)   # Executes first (outermost)
+app.add_middleware(SecondMiddleware)  # Executes second
+app.add_middleware(ThirdMiddleware)   # Executes third (innermost)
+
+@app.middleware("http")               # Executes last (closest to path operation)
+async def custom_middleware(request, call_next):
+    return await call_next(request)
+```
+
+The execution flow is:
+1. FirstMiddleware (in)
+2. SecondMiddleware (in)
+3. ThirdMiddleware (in)
+4. custom_middleware (in)
+5. Path operation
+6. custom_middleware (out)
+7. ThirdMiddleware (out)
+8. SecondMiddleware (out)
+9. FirstMiddleware (out)
+
+## Best Practices
+
+<Note>
+- Keep middleware focused on cross-cutting concerns (logging, auth, timing)
+- Avoid heavy computation in middleware
+- Always call `await call_next(request)` to ensure the request is processed
+- Handle exceptions appropriately to prevent breaking the request/response cycle
+- Order middleware carefully based on dependencies
+</Note>
+
+## Exception Handling in Middleware
+
+```python
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+
+app = FastAPI()
+
+@app.middleware("http")
+async def error_handling_middleware(request: Request, call_next):
+    try:
+        response = await call_next(request)
+        return response
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Internal server error", "error": str(e)}
+        )
+```
+
+## See Also
+
+- [CORS Middleware](/advanced/cors) - Configure Cross-Origin Resource Sharing
+- [Behind a Proxy](/advanced/behind-a-proxy) - Running FastAPI behind a reverse proxy
+- [Events](/advanced/events) - Application startup and shutdown events

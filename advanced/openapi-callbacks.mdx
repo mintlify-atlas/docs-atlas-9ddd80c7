@@ -1,0 +1,355 @@
+---
+title: "OpenAPI Callbacks"
+description: "Learn how to document API callbacks in FastAPI, where your API calls external APIs provided by users"
+---
+
+OpenAPI callbacks allow you to document scenarios where your API makes requests to external APIs provided by your users. This is useful when your API needs to notify external systems or trigger actions on user-provided endpoints.
+
+## What Are Callbacks?
+
+A callback occurs when:
+
+1. A user sends a request to your API
+2. Your API processes the request
+3. Your API sends a request to an external API (provided by the user)
+4. The external API processes and responds
+
+<Info>
+Callbacks are essentially "your API calling their API" - documenting what the external API should look like to receive your requests.
+</Info>
+
+## Callback Use Case Example
+
+Imagine you're building an invoice processing API:
+
+1. External developers create invoices through your API
+2. Your API sends invoices to customers
+3. Your API collects payment
+4. Your API notifies the external developer by making a POST request to their API (callback)
+
+## Creating an API with Callbacks
+
+Let's build a complete example showing how to document callbacks.
+
+### Define Data Models
+
+First, define the models for invoices and callback events:
+
+```python
+from fastapi import APIRouter, FastAPI
+from pydantic import BaseModel, HttpUrl
+
+app = FastAPI()
+
+class Invoice(BaseModel):
+    id: str
+    title: str | None = None
+    customer: str
+    total: float
+
+class InvoiceEvent(BaseModel):
+    description: str
+    paid: bool
+
+class InvoiceEventReceived(BaseModel):
+    ok: bool
+```
+
+<Note>
+The `HttpUrl` type from Pydantic validates that the callback URL is properly formatted.
+</Note>
+
+### Create a Callback Router
+
+Create an `APIRouter` specifically for documenting the callback:
+
+```python
+invoices_callback_router = APIRouter()
+
+@invoices_callback_router.post(
+    "{$callback_url}/invoices/{$request.body.id}",
+    response_model=InvoiceEventReceived
+)
+def invoice_notification(body: InvoiceEvent):
+    pass
+```
+
+### Understanding the Callback Path
+
+The callback path uses OpenAPI expressions:
+
+```python
+"{$callback_url}/invoices/{$request.body.id}"
+```
+
+This expression:
+- `{$callback_url}`: References the `callback_url` query parameter from the original request
+- `{$request.body.id}`: References the `id` field from the request body
+
+<Tip>
+OpenAPI 3 expressions allow you to construct dynamic URLs using data from the original request.
+</Tip>
+
+### Add the Callback to Your Endpoint
+
+Use the `callbacks` parameter to attach the callback documentation:
+
+```python
+@app.post("/invoices/", callbacks=invoices_callback_router.routes)
+def create_invoice(invoice: Invoice, callback_url: HttpUrl | None = None):
+    """
+    Create an invoice.
+    
+    This will (let's imagine) let the API user (some external developer) create an
+    invoice.
+    
+    And this path operation will:
+    
+    * Send the invoice to the client.
+    * Collect the money from the client.
+    * Send a notification back to the API user (the external developer), as a callback.
+        * At this point is that the API will somehow send a POST request to the
+            external API with the notification of the invoice event
+            (e.g. "payment successful").
+    """
+    # Send the invoice, collect the money, send the notification (the callback)
+    return {"msg": "Invoice received"}
+```
+
+<Warning>
+Note that you pass `invoices_callback_router.routes` (the `.routes` attribute), not the router itself.
+</Warning>
+
+## How Callbacks Work in Practice
+
+Here's a real-world example flow:
+
+### 1. User Sends Request to Your API
+
+```bash
+POST https://yourapi.com/invoices/?callback_url=https://www.external.org/events
+Content-Type: application/json
+
+{
+    "id": "2expen51ve",
+    "customer": "Mr. Richie Rich",
+    "total": "9999"
+}
+```
+
+### 2. Your API Processes and Calls Back
+
+After processing, your API makes a callback request:
+
+```bash
+POST https://www.external.org/events/invoices/2expen51ve
+Content-Type: application/json
+
+{
+    "description": "Payment celebration",
+    "paid": true
+}
+```
+
+### 3. External API Responds
+
+The external API (implemented by your user) responds:
+
+```json
+{
+    "ok": true
+}
+```
+
+## Implementing the Actual Callback
+
+The callback router only *documents* the callback. You still need to implement the actual HTTP request:
+
+```python
+import httpx
+from fastapi import BackgroundTasks
+
+async def send_callback(callback_url: str, invoice_id: str, paid: bool):
+    """Send callback notification to external API"""
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post(
+                f"{callback_url}/invoices/{invoice_id}",
+                json={
+                    "description": "Payment processed",
+                    "paid": paid
+                },
+                timeout=10.0
+            )
+            response.raise_for_status()
+        except httpx.HTTPError as e:
+            # Handle callback failures
+            print(f"Callback failed: {e}")
+
+@app.post("/invoices/", callbacks=invoices_callback_router.routes)
+async def create_invoice(
+    invoice: Invoice,
+    callback_url: HttpUrl | None = None,
+    background_tasks: BackgroundTasks = None
+):
+    # Process the invoice...
+    
+    # Send callback in background
+    if callback_url:
+        background_tasks.add_task(
+            send_callback,
+            str(callback_url),
+            invoice.id,
+            paid=True
+        )
+    
+    return {"msg": "Invoice received"}
+```
+
+<Tip>
+Use `BackgroundTasks` to send callbacks asynchronously without blocking the response to the user.
+</Tip>
+
+## Multiple Callbacks
+
+You can document multiple callbacks for different events:
+
+```python
+callback_router = APIRouter()
+
+@callback_router.post("{$callback_url}/invoice-created")
+def invoice_created_callback(body: InvoiceEvent):
+    pass
+
+@callback_router.post("{$callback_url}/invoice-paid")
+def invoice_paid_callback(body: InvoiceEvent):
+    pass
+
+@callback_router.post("{$callback_url}/invoice-cancelled")
+def invoice_cancelled_callback(body: InvoiceEvent):
+    pass
+
+@app.post("/invoices/", callbacks=callback_router.routes)
+def create_invoice(invoice: Invoice, callback_url: HttpUrl | None = None):
+    return {"msg": "Invoice received"}
+```
+
+## OpenAPI Path Expressions
+
+Callbacks support various OpenAPI 3 expressions:
+
+### Query Parameter Reference
+
+```python
+"{$request.query.callback_url}/notify"
+```
+
+### Header Reference
+
+```python
+"{$request.header.X-Callback-URL}/events"
+```
+
+### Body Field Reference
+
+```python
+"{$request.body#/webhook_url}/updates"
+```
+
+### Multiple Parameters
+
+```python
+"{$callback_url}/users/{$request.body.user_id}/events"
+```
+
+## Viewing Callback Documentation
+
+Once implemented, your callbacks appear in the API documentation:
+
+1. Start your application: `uvicorn main:app --reload`
+2. Open the docs: `http://127.0.0.1:8000/docs`
+3. Find your endpoint and expand the "Callbacks" section
+
+The documentation shows external developers exactly how to structure their API to receive your callbacks.
+
+## Best Practices
+
+<Tip>
+**Document what you send**: Focus on documenting the requests your API makes, not how to implement your callback logic.
+</Tip>
+
+- **Use clear naming**: Name your callbacks descriptively (e.g., `payment-completed`, `invoice-sent`)
+- **Include authentication**: Document required headers or authentication for callbacks
+- **Handle failures gracefully**: Implement retries and error handling for callback requests
+- **Use background tasks**: Don't block user requests while sending callbacks
+- **Timeout appropriately**: Set reasonable timeouts for callback requests
+- **Version your callbacks**: Include version info if your callback format may change
+
+## Complete Example
+
+```python
+from fastapi import APIRouter, FastAPI, BackgroundTasks
+from pydantic import BaseModel, HttpUrl
+import httpx
+
+app = FastAPI()
+
+class Invoice(BaseModel):
+    id: str
+    title: str | None = None
+    customer: str
+    total: float
+
+class InvoiceEvent(BaseModel):
+    description: str
+    paid: bool
+
+class InvoiceEventReceived(BaseModel):
+    ok: bool
+
+# Callback documentation
+invoices_callback_router = APIRouter()
+
+@invoices_callback_router.post(
+    "{$callback_url}/invoices/{$request.body.id}",
+    response_model=InvoiceEventReceived
+)
+def invoice_notification(body: InvoiceEvent):
+    """Callback sent when invoice is processed"""
+    pass
+
+# Actual callback implementation
+async def send_invoice_callback(callback_url: str, invoice_id: str):
+    async with httpx.AsyncClient() as client:
+        try:
+            await client.post(
+                f"{callback_url}/invoices/{invoice_id}",
+                json={"description": "Payment successful", "paid": True},
+                timeout=10.0
+            )
+        except httpx.HTTPError:
+            pass  # Log error in production
+
+@app.post("/invoices/", callbacks=invoices_callback_router.routes)
+async def create_invoice(
+    invoice: Invoice,
+    callback_url: HttpUrl | None = None,
+    background_tasks: BackgroundTasks = BackgroundTasks()
+):
+    # Process invoice logic here
+    
+    if callback_url:
+        background_tasks.add_task(
+            send_invoice_callback,
+            str(callback_url),
+            invoice.id
+        )
+    
+    return {"msg": "Invoice received"}
+```
+
+## Related Topics
+
+- [OpenAPI Webhooks](/advanced/openapi-webhooks) - Document webhook endpoints (similar but different concept)
+- [Extending OpenAPI](/advanced/extending-openapi) - Customize your OpenAPI schema
+- [Background Tasks](https://fastapi.tiangolo.com/tutorial/background-tasks/) - Execute callbacks without blocking

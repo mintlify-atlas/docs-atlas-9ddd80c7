@@ -1,0 +1,582 @@
+---
+title: Settings and Environment Variables
+description: Learn how to manage application settings and environment variables using Pydantic Settings in FastAPI
+---
+
+Most applications need external settings and configurations like secret keys, database credentials, API tokens, and other environment-specific values. FastAPI integrates seamlessly with Pydantic Settings to provide type-safe, validated configuration management.
+
+## Why Use Settings Management?
+
+Environment variables are essential for:
+
+- **Security**: Keeping secrets out of your codebase
+- **Flexibility**: Different settings for development, staging, and production
+- **Portability**: Easy deployment across different environments
+- **12-Factor App compliance**: Following modern application best practices
+
+<Warning>
+Never hardcode sensitive information like passwords, API keys, or secret tokens in your source code. Always use environment variables or secure configuration management.
+</Warning>
+
+## Understanding Environment Variables
+
+Environment variables are text strings stored outside your application code. They're accessible to your application at runtime but can only be read as strings.
+
+### The Challenge
+
+```python
+import os
+
+# Environment variables are always strings
+DATABASE_PORT = os.getenv("DATABASE_PORT")  # Returns "5432", not 5432
+DEBUG_MODE = os.getenv("DEBUG_MODE")  # Returns "true", not True
+
+# You need manual type conversion and validation
+port = int(DATABASE_PORT) if DATABASE_PORT else 5432
+debug = DEBUG_MODE.lower() == "true" if DEBUG_MODE else False
+```
+
+This is where Pydantic Settings comes in.
+
+## Pydantic Settings
+
+Pydantic Settings provides automatic type conversion, validation, and IDE support for your application configuration.
+
+### Installation
+
+First, install the `pydantic-settings` package:
+
+```bash
+pip install pydantic-settings
+```
+
+Or install it with FastAPI's all extras:
+
+```bash
+pip install "fastapi[all]"
+```
+
+<Info>
+The `pydantic-settings` package is a separate package from Pydantic itself and must be installed explicitly.
+</Info>
+
+## Creating a Settings Class
+
+Create a settings class by inheriting from `BaseSettings`:
+
+```python
+from pydantic_settings import BaseSettings
+
+class Settings(BaseSettings):
+    app_name: str = "My FastAPI App"
+    admin_email: str
+    items_per_user: int = 50
+    database_url: str
+    secret_key: str
+    debug: bool = False
+
+# Create an instance
+settings = Settings()
+```
+
+Pydantic Settings will:
+- ✅ Read environment variables (case-insensitive)
+- ✅ Convert types automatically (string → int, bool, etc.)
+- ✅ Validate required fields
+- ✅ Use default values when not provided
+- ✅ Raise errors for invalid data
+
+## Using Settings in FastAPI
+
+Here's a complete example:
+
+```python
+from fastapi import FastAPI
+from pydantic_settings import BaseSettings
+
+class Settings(BaseSettings):
+    app_name: str = "Awesome API"
+    admin_email: str = "admin@example.com"
+    items_per_user: int = 50
+
+settings = Settings()
+
+app = FastAPI()
+
+@app.get("/info")
+async def info():
+    return {
+        "app_name": settings.app_name,
+        "admin_email": settings.admin_email,
+        "items_per_user": settings.items_per_user
+    }
+```
+
+### Running with Environment Variables
+
+```bash
+APP_NAME="Super API" ADMIN_EMAIL="admin@myapp.com" fastapi run main.py
+```
+
+<Tip>
+Environment variable names are matched to field names in a case-insensitive manner. `APP_NAME`, `app_name`, and `App_Name` all map to the `app_name` field.
+</Tip>
+
+## Organizing Settings in Modules
+
+For larger applications, separate your settings into dedicated modules.
+
+### config.py
+
+```python
+from pydantic_settings import BaseSettings
+from pydantic import Field
+
+class Settings(BaseSettings):
+    # Application settings
+    app_name: str = "My FastAPI App"
+    debug: bool = False
+    version: str = "1.0.0"
+    
+    # Database settings
+    database_url: str = Field(..., description="PostgreSQL connection string")
+    database_pool_size: int = 5
+    
+    # Security settings
+    secret_key: str = Field(..., min_length=32)
+    access_token_expire_minutes: int = 30
+    
+    # Email settings
+    admin_email: str
+    email_from: str = "noreply@example.com"
+    smtp_host: str = "smtp.example.com"
+    smtp_port: int = 587
+
+settings = Settings()
+```
+
+### main.py
+
+```python
+from fastapi import FastAPI
+from config import settings
+
+app = FastAPI(title=settings.app_name, version=settings.version)
+
+@app.get("/")
+async def root():
+    return {
+        "app": settings.app_name,
+        "version": settings.version
+    }
+```
+
+## Settings as Dependencies
+
+Using settings as a dependency makes testing easier and provides better control:
+
+```python
+from functools import lru_cache
+from fastapi import Depends, FastAPI
+from pydantic_settings import BaseSettings
+
+class Settings(BaseSettings):
+    app_name: str = "Awesome API"
+    admin_email: str = "admin@example.com"
+
+@lru_cache
+def get_settings():
+    return Settings()
+
+app = FastAPI()
+
+@app.get("/info")
+async def info(settings: Settings = Depends(get_settings)):
+    return {
+        "app_name": settings.app_name,
+        "admin_email": settings.admin_email
+    }
+```
+
+<Note>
+The `@lru_cache` decorator ensures the settings are only loaded once, improving performance. Without it, settings would be reloaded on every request.
+</Note>
+
+### Benefits of Dependency Injection
+
+1. **Easier testing**: Override settings in tests
+2. **Better isolation**: Each test can have different settings
+3. **Explicit dependencies**: Clear what each endpoint needs
+
+### Testing with Settings Dependencies
+
+```python
+from fastapi.testclient import TestClient
+from main import app, get_settings
+from config import Settings
+
+def get_test_settings():
+    return Settings(
+        app_name="Test App",
+        admin_email="test@example.com"
+    )
+
+app.dependency_overrides[get_settings] = get_test_settings
+
+client = TestClient(app)
+
+def test_info():
+    response = client.get("/info")
+    assert response.status_code == 200
+    assert response.json()["admin_email"] == "test@example.com"
+```
+
+## Reading from .env Files
+
+For local development, you can store environment variables in a `.env` file.
+
+### Creating a .env File
+
+```bash
+# .env
+APP_NAME="My Awesome API"
+ADMIN_EMAIL="admin@example.com"
+DATABASE_URL="postgresql://user:password@localhost:5432/mydb"
+SECRET_KEY="your-secret-key-here-make-it-long-and-random"
+DEBUG=true
+```
+
+### Configuring Settings to Read .env
+
+Install python-dotenv:
+
+```bash
+pip install python-dotenv
+```
+
+Update your settings class:
+
+```python
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+class Settings(BaseSettings):
+    app_name: str
+    admin_email: str
+    database_url: str
+    secret_key: str
+    debug: bool = False
+    
+    model_config = SettingsConfigDict(env_file=".env")
+```
+
+Now Pydantic will automatically load variables from the `.env` file.
+
+<Warning>
+Never commit your `.env` file to version control. Add it to your `.gitignore` file to prevent accidentally exposing secrets.
+</Warning>
+
+### Multiple Environment Files
+
+You can use different `.env` files for different environments:
+
+```python
+from pydantic_settings import BaseSettings, SettingsConfigDict
+import os
+
+env = os.getenv("ENV", "development")
+
+class Settings(BaseSettings):
+    app_name: str
+    database_url: str
+    
+    model_config = SettingsConfigDict(
+        env_file=f".env.{env}",
+        env_file_encoding="utf-8"
+    )
+```
+
+Then use:
+- `.env.development` for local development
+- `.env.staging` for staging environment
+- `.env.production` for production
+
+## Optimizing Settings Loading with lru_cache
+
+Reading settings (especially from files) is expensive. Use `@lru_cache` to load them only once:
+
+```python
+from functools import lru_cache
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+class Settings(BaseSettings):
+    app_name: str
+    database_url: str
+    
+    model_config = SettingsConfigDict(env_file=".env")
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
+
+# Now get_settings() returns the same instance every time
+settings = get_settings()
+```
+
+### How lru_cache Works
+
+```python
+# First call: reads from .env file
+settings1 = get_settings()  # Slow - reads file
+
+# Subsequent calls: returns cached instance
+settings2 = get_settings()  # Fast - uses cache
+settings3 = get_settings()  # Fast - uses cache
+
+assert settings1 is settings2 is settings3  # All the same object
+```
+
+<Info>
+`@lru_cache` is from Python's `functools` module. It caches function results based on arguments. Since `get_settings()` has no arguments, it always returns the same cached result.
+</Info>
+
+## Advanced Configuration
+
+### Field Validation
+
+```python
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings
+
+class Settings(BaseSettings):
+    app_name: str = Field(..., min_length=3, max_length=50)
+    port: int = Field(default=8000, ge=1, le=65535)
+    workers: int = Field(default=4, ge=1, le=16)
+    database_url: str = Field(..., pattern=r"^postgresql://.*")
+    
+    @field_validator("app_name")
+    @classmethod
+    def validate_app_name(cls, v: str) -> str:
+        if v.lower() in ["test", "admin", "root"]:
+            raise ValueError("Reserved app name")
+        return v
+```
+
+### Environment Variable Prefixes
+
+Use prefixes to namespace your environment variables:
+
+```python
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+class Settings(BaseSettings):
+    name: str
+    version: str
+    
+    model_config = SettingsConfigDict(env_prefix="MYAPP_")
+
+# Now reads MYAPP_NAME and MYAPP_VERSION
+settings = Settings()
+```
+
+### Nested Settings
+
+```python
+from pydantic import BaseModel
+from pydantic_settings import BaseSettings
+
+class DatabaseSettings(BaseModel):
+    host: str = "localhost"
+    port: int = 5432
+    username: str
+    password: str
+    database: str
+
+class Settings(BaseSettings):
+    app_name: str
+    database: DatabaseSettings
+
+# Environment variables:
+# APP_NAME="MyApp"
+# DATABASE__HOST="db.example.com"
+# DATABASE__PORT="5432"
+# DATABASE__USERNAME="dbuser"
+# DATABASE__PASSWORD="secret"
+# DATABASE__DATABASE="mydb"
+```
+
+<Tip>
+Use double underscores `__` to set nested configuration values via environment variables.
+</Tip>
+
+## Real-World Example
+
+Here's a complete, production-ready settings configuration:
+
+```python
+from functools import lru_cache
+from typing import Optional
+from pydantic import Field, PostgresDsn, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+class Settings(BaseSettings):
+    # Application
+    app_name: str = "FastAPI Application"
+    environment: str = Field(default="development", pattern="^(development|staging|production)$")
+    debug: bool = False
+    version: str = "1.0.0"
+    
+    # Server
+    host: str = "0.0.0.0"
+    port: int = Field(default=8000, ge=1, le=65535)
+    workers: int = Field(default=4, ge=1, le=16)
+    
+    # Security
+    secret_key: str = Field(..., min_length=32)
+    access_token_expire_minutes: int = 30
+    refresh_token_expire_days: int = 7
+    algorithm: str = "HS256"
+    
+    # Database
+    database_url: PostgresDsn
+    database_pool_size: int = Field(default=5, ge=1, le=20)
+    database_max_overflow: int = Field(default=10, ge=0, le=20)
+    
+    # Redis
+    redis_url: str = "redis://localhost:6379/0"
+    redis_cache_expire: int = 3600
+    
+    # Email
+    smtp_host: str
+    smtp_port: int = 587
+    smtp_username: Optional[str] = None
+    smtp_password: Optional[str] = None
+    email_from: str
+    
+    # CORS
+    cors_origins: list[str] = Field(default=["http://localhost:3000"])
+    
+    # Logging
+    log_level: str = Field(default="INFO", pattern="^(DEBUG|INFO|WARNING|ERROR|CRITICAL)$")
+    
+    @field_validator("environment")
+    @classmethod
+    def validate_environment(cls, v: str) -> str:
+        if v == "production" and cls.debug:
+            raise ValueError("Debug mode cannot be enabled in production")
+        return v
+    
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore"
+    )
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
+
+# Usage
+settings = get_settings()
+```
+
+## Best Practices
+
+### 1. Use Type Hints
+
+```python
+class Settings(BaseSettings):
+    port: int  # ✅ Will convert "8000" to 8000
+    debug: bool  # ✅ Will convert "true" to True
+    tags: list[str]  # ✅ Will parse "tag1,tag2,tag3"
+```
+
+### 2. Provide Sensible Defaults
+
+```python
+class Settings(BaseSettings):
+    port: int = 8000  # ✅ Good default
+    workers: int = 4  # ✅ Good default
+    secret_key: str  # ✅ Required field, no default
+```
+
+### 3. Use Field Validators
+
+```python
+from pydantic import Field
+
+class Settings(BaseSettings):
+    secret_key: str = Field(..., min_length=32)
+    port: int = Field(default=8000, ge=1, le=65535)
+```
+
+### 4. Document Your Settings
+
+```python
+class Settings(BaseSettings):
+    database_url: str = Field(
+        ...,
+        description="PostgreSQL database connection URL",
+        examples=["postgresql://user:pass@localhost:5432/db"]
+    )
+```
+
+### 5. Never Commit Secrets
+
+Add to `.gitignore`:
+
+```
+.env
+.env.*
+*.secret
+*.key
+```
+
+## Deployment Considerations
+
+### Container Environments (Docker, Kubernetes)
+
+```yaml
+# docker-compose.yml
+services:
+  api:
+    environment:
+      - APP_NAME=My API
+      - DATABASE_URL=postgresql://user:pass@db:5432/mydb
+      - SECRET_KEY=${SECRET_KEY}
+```
+
+### Cloud Platforms (AWS, GCP, Azure)
+
+Most cloud platforms provide environment variable management:
+
+- **AWS**: Parameter Store, Secrets Manager
+- **GCP**: Secret Manager
+- **Azure**: Key Vault
+- **Heroku**: Config Vars
+
+<Info>
+Always use your platform's secret management service for sensitive data in production.
+</Info>
+
+## Summary
+
+Pydantic Settings provides:
+
+✅ **Type safety**: Automatic type conversion and validation
+✅ **IDE support**: Full autocomplete and type checking  
+✅ **Easy testing**: Dependency injection for test overrides
+✅ **File support**: Read from `.env` files
+✅ **Performance**: Cache with `@lru_cache`
+✅ **Validation**: Field validators and constraints
+
+## Learn More
+
+- [Pydantic Settings Documentation](https://docs.pydantic.dev/latest/concepts/pydantic_settings/)
+- [Environment Variables Guide](/environment-variables)
+- [12-Factor App Methodology](https://12factor.net/config)
+- [FastAPI Dependencies](/tutorial/dependencies)
+
+<Info>
+Settings management is crucial for production applications. Always validate and type-check your configuration to catch errors early.
+</Info>

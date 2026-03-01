@@ -1,0 +1,535 @@
+---
+title: WebSocket
+description: WebSocket class for handling real-time bidirectional communication in FastAPI
+---
+
+The `WebSocket` class provides an interface for handling WebSocket connections in FastAPI. It allows bidirectional, real-time communication between the client and server. FastAPI uses Starlette's `WebSocket` class.
+
+## Importing
+
+```python
+from fastapi import WebSocket, WebSocketDisconnect
+```
+
+## Basic Usage
+
+```python
+from fastapi import FastAPI, WebSocket
+
+app = FastAPI()
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    while True:
+        data = await websocket.receive_text()
+        await websocket.send_text(f"Message text was: {data}")
+```
+
+## Class Reference
+
+### WebSocket
+
+The `WebSocket` class provides methods for accepting connections, sending and receiving data, and closing connections.
+
+## Methods
+
+<Accordion title="accept()">
+
+### `async accept(subprotocol=None, headers=None)`
+
+Accept the WebSocket connection.
+
+<ParamField path="subprotocol" type="str | None" default="None">
+  WebSocket subprotocol to use.
+</ParamField>
+
+<ParamField path="headers" type="Iterable[tuple[bytes, bytes]] | None" default="None">
+  Additional headers to send in the accept response.
+</ParamField>
+
+```python
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    # Connection is now established
+```
+
+**Note:** You must call `accept()` before sending or receiving any messages.
+
+</Accordion>
+
+<Accordion title="receive_text()">
+
+### `async receive_text()`
+
+Receive a text message from the client.
+
+```python
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    message = await websocket.receive_text()
+    print(f"Received: {message}")
+```
+
+**Returns:** `str` - The received text message
+
+**Raises:** `WebSocketDisconnect` - If the client disconnects
+
+</Accordion>
+
+<Accordion title="receive_bytes()">
+
+### `async receive_bytes()`
+
+Receive binary data from the client.
+
+```python
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    data = await websocket.receive_bytes()
+    print(f"Received {len(data)} bytes")
+```
+
+**Returns:** `bytes` - The received binary data
+
+**Raises:** `WebSocketDisconnect` - If the client disconnects
+
+</Accordion>
+
+<Accordion title="receive_json()">
+
+### `async receive_json(mode='text')`
+
+Receive and parse JSON data from the client.
+
+<ParamField path="mode" type="str" default="'text'">
+  Either "text" or "binary" to specify how to receive the data.
+</ParamField>
+
+```python
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    data = await websocket.receive_json()
+    print(f"Received JSON: {data}")
+```
+
+**Returns:** `Any` - The parsed JSON data
+
+**Raises:** `WebSocketDisconnect` - If the client disconnects
+
+</Accordion>
+
+<Accordion title="send_text()">
+
+### `async send_text(data)`
+
+Send a text message to the client.
+
+<ParamField path="data" type="str" required>
+  The text message to send.
+</ParamField>
+
+```python
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    await websocket.send_text("Hello, client!")
+```
+
+</Accordion>
+
+<Accordion title="send_bytes()">
+
+### `async send_bytes(data)`
+
+Send binary data to the client.
+
+<ParamField path="data" type="bytes" required>
+  The binary data to send.
+</ParamField>
+
+```python
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    await websocket.send_bytes(b"Binary data")
+```
+
+</Accordion>
+
+<Accordion title="send_json()">
+
+### `async send_json(data, mode='text')`
+
+Serialize and send JSON data to the client.
+
+<ParamField path="data" type="Any" required>
+  The data to serialize and send as JSON.
+</ParamField>
+
+<ParamField path="mode" type="str" default="'text'">
+  Either "text" or "binary" to specify how to send the data.
+</ParamField>
+
+```python
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    await websocket.send_json({"message": "Hello", "count": 42})
+```
+
+</Accordion>
+
+<Accordion title="close()">
+
+### `async close(code=1000, reason=None)`
+
+Close the WebSocket connection.
+
+<ParamField path="code" type="int" default="1000">
+  WebSocket close code (1000 = normal closure).
+</ParamField>
+
+<ParamField path="reason" type="str | None" default="None">
+  Optional reason for closing the connection.
+</ParamField>
+
+```python
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    try:
+        while True:
+            data = await websocket.receive_text()
+            await websocket.send_text(f"Echo: {data}")
+    except WebSocketDisconnect:
+        await websocket.close(code=1000, reason="Client disconnected")
+```
+
+**Common close codes:**
+- `1000` - Normal closure
+- `1001` - Going away
+- `1002` - Protocol error
+- `1003` - Unsupported data
+- `1011` - Internal server error
+
+</Accordion>
+
+## Attributes
+
+<ResponseField name="client" type="Address | None">
+  Client address information (host and port).
+  
+  ```python
+  @app.websocket("/ws")
+  async def websocket_endpoint(websocket: WebSocket):
+      await websocket.accept()
+      if websocket.client:
+          print(f"Client: {websocket.client.host}:{websocket.client.port}")
+  ```
+</ResponseField>
+
+<ResponseField name="url" type="URL">
+  The WebSocket URL.
+  
+  ```python
+  @app.websocket("/ws/{client_id}")
+  async def websocket_endpoint(websocket: WebSocket):
+      await websocket.accept()
+      print(f"URL: {websocket.url}")
+  ```
+</ResponseField>
+
+<ResponseField name="headers" type="Headers">
+  Request headers from the WebSocket handshake.
+  
+  ```python
+  @app.websocket("/ws")
+  async def websocket_endpoint(websocket: WebSocket):
+      await websocket.accept()
+      auth_header = websocket.headers.get("authorization")
+  ```
+</ResponseField>
+
+<ResponseField name="query_params" type="QueryParams">
+  Query parameters from the WebSocket URL.
+  
+  ```python
+  @app.websocket("/ws")
+  async def websocket_endpoint(websocket: WebSocket):
+      await websocket.accept()
+      token = websocket.query_params.get("token")
+  ```
+</ResponseField>
+
+<ResponseField name="path_params" type="dict[str, Any]">
+  Path parameters from the WebSocket URL.
+  
+  ```python
+  @app.websocket("/ws/{client_id}")
+  async def websocket_endpoint(websocket: WebSocket, client_id: str):
+      await websocket.accept()
+      # Or access via websocket.path_params["client_id"]
+  ```
+</ResponseField>
+
+<ResponseField name="cookies" type="dict[str, str]">
+  Cookies from the WebSocket handshake request.
+</ResponseField>
+
+<ResponseField name="state" type="State">
+  State object for storing data during the WebSocket connection lifecycle.
+</ResponseField>
+
+<ResponseField name="client_state" type="WebSocketState">
+  Current state of the WebSocket connection.
+  
+  **States:**
+  - `WebSocketState.CONNECTING` - Connection is being established
+  - `WebSocketState.CONNECTED` - Connection is established
+  - `WebSocketState.DISCONNECTED` - Connection is closed
+</ResponseField>
+
+## WebSocketDisconnect Exception
+
+Raised when the client disconnects or the connection is lost.
+
+```python
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+
+app = FastAPI()
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    try:
+        while True:
+            data = await websocket.receive_text()
+            await websocket.send_text(f"Echo: {data}")
+    except WebSocketDisconnect:
+        print("Client disconnected")
+```
+
+**Attributes:**
+
+<ResponseField name="code" type="int">
+  WebSocket close code.
+</ResponseField>
+
+<ResponseField name="reason" type="str | None">
+  Reason for disconnection.
+</ResponseField>
+
+## Common Patterns
+
+### Echo Server
+
+```python
+from fastapi import FastAPI, WebSocket
+
+app = FastAPI()
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    try:
+        while True:
+            data = await websocket.receive_text()
+            await websocket.send_text(f"Echo: {data}")
+    except WebSocketDisconnect:
+        print("Client disconnected")
+```
+
+### Broadcasting to Multiple Clients
+
+```python
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from typing import List
+
+app = FastAPI()
+
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: List[WebSocket] = []
+    
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+    
+    def disconnect(self, websocket: WebSocket):
+        self.active_connections.remove(websocket)
+    
+    async def broadcast(self, message: str):
+        for connection in self.active_connections:
+            await connection.send_text(message)
+
+manager = ConnectionManager()
+
+@app.websocket("/ws/{client_id}")
+async def websocket_endpoint(websocket: WebSocket, client_id: str):
+    await manager.connect(websocket)
+    try:
+        while True:
+            data = await websocket.receive_text()
+            await manager.broadcast(f"Client {client_id}: {data}")
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+        await manager.broadcast(f"Client {client_id} left")
+```
+
+### JSON Message Handling
+
+```python
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class Message(BaseModel):
+    type: str
+    content: str
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    try:
+        while True:
+            # Receive JSON
+            data = await websocket.receive_json()
+            message = Message(**data)
+            
+            # Process message
+            response = {
+                "type": "response",
+                "content": f"Received: {message.content}"
+            }
+            
+            # Send JSON
+            await websocket.send_json(response)
+    except WebSocketDisconnect:
+        print("Client disconnected")
+```
+
+### Authentication
+
+```python
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, status
+
+app = FastAPI()
+
+async def verify_token(token: str) -> bool:
+    # Verify token logic
+    return token == "valid_token"
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    # Get token from query params or headers
+    token = websocket.query_params.get("token")
+    
+    if not token or not await verify_token(token):
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+    
+    await websocket.accept()
+    try:
+        while True:
+            data = await websocket.receive_text()
+            await websocket.send_text(f"Echo: {data}")
+    except WebSocketDisconnect:
+        print("Client disconnected")
+```
+
+### Path and Query Parameters
+
+```python
+from fastapi import FastAPI, WebSocket
+
+app = FastAPI()
+
+@app.websocket("/ws/{room_id}")
+async def websocket_endpoint(
+    websocket: WebSocket,
+    room_id: str,
+):
+    await websocket.accept()
+    
+    # Access query parameters
+    username = websocket.query_params.get("username", "Anonymous")
+    
+    await websocket.send_text(f"Welcome {username} to room {room_id}")
+    
+    try:
+        while True:
+            data = await websocket.receive_text()
+            await websocket.send_text(f"[{room_id}] {username}: {data}")
+    except WebSocketDisconnect:
+        print(f"{username} left room {room_id}")
+```
+
+### Dependencies with WebSockets
+
+```python
+from fastapi import FastAPI, WebSocket, Depends, HTTPException, status
+
+app = FastAPI()
+
+async def get_token(websocket: WebSocket) -> str:
+    token = websocket.query_params.get("token")
+    if not token:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
+    return token
+
+async def verify_token(token: str = Depends(get_token)) -> str:
+    if token != "valid_token":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
+    return token
+
+@app.websocket("/ws")
+async def websocket_endpoint(
+    websocket: WebSocket,
+    token: str = Depends(verify_token),
+):
+    await websocket.accept()
+    try:
+        while True:
+            data = await websocket.receive_text()
+            await websocket.send_text(f"Authenticated echo: {data}")
+    except WebSocketDisconnect:
+        print("Client disconnected")
+```
+
+## Client Example (JavaScript)
+
+```javascript
+// Connect to WebSocket
+const ws = new WebSocket("ws://localhost:8000/ws");
+
+// Connection opened
+ws.onopen = (event) => {
+    console.log("Connected to WebSocket");
+    ws.send("Hello Server!");
+};
+
+// Listen for messages
+ws.onmessage = (event) => {
+    console.log("Message from server:", event.data);
+};
+
+// Connection closed
+ws.onclose = (event) => {
+    console.log("Disconnected from WebSocket");
+};
+
+// Error handling
+ws.onerror = (error) => {
+    console.error("WebSocket error:", error);
+};
+
+// Send JSON
+ws.send(JSON.stringify({ type: "message", content: "Hello" }));
+```
